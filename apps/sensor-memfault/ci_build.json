@@ -1,0 +1,15 @@
+{
+    "use_sysbuild": true,
+    "variants": {
+        "metrics": {
+            "cmake_defines": {
+                "CONFIG_MEMFAULT_DEMO_GESTURE_DETECT": "y"
+            }
+        },
+        "metrics-crashy-shake": {
+            "cmake_defines": {
+                "CONFIG_MEMFAULT_DEMO_GESTURE_DETECT": "n"
+            }
+        }
+    }
+}

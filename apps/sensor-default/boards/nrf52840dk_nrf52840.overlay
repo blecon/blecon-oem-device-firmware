@@ -1,0 +1,42 @@
+/*
+ * Copyright (c) Blecon Ltd
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/ {
+    chosen {
+        nordic,pm-ext-flash = &mx25r64;
+    };
+    
+    zephyr,user {
+		io-channels = <&adc 4>;
+	};
+};
+
+&i2c0 {
+    compatible = "nordic,nrf-twim";        
+    clock-frequency = <I2C_BITRATE_FAST>;
+
+    sht4x: sht4x@44 {
+        compatible = "sensirion,sht4x";
+        repeatability = <1>;
+        reg = <0x44>;
+        status = "okay";
+    };
+
+};
+
+&i2c1 {
+    compatible = "nordic,nrf-twim";
+    clock-frequency = <I2C_BITRATE_FAST>;
+    status = "okay";
+
+    lis3dh: lis3dh@18 {
+        compatible = "st,lis3dh", "st,lis2dh";
+        reg = <0x18>;
+        irq-gpios = <&gpio1 1 GPIO_ACTIVE_HIGH>, <&gpio1 2 GPIO_ACTIVE_HIGH>;
+        int1-gpio-config = <1>;
+        int2-gpio-config = <1>;
+        status = "okay";
+    };
+};

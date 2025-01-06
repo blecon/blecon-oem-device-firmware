@@ -1,0 +1,20 @@
+# Copyright (c) Blecon Ltd
+# SPDX-License-Identifier: Apache-2.0
+config BLECON_LIB_BATTERY
+    bool "Battery driver"
+    default n
+config BLECON_LIB_OTA
+    bool "OTA module"
+    default n
+config BLECON_LIB_MOTION
+    bool "Motion module"
+    default n
+config BLECON_APP_VERSION
+    string "Blecon App version (semver)"
+    default "0.0.0"
+config BLECON_APP_BUILD_NUMBER
+    int "Blecon App build number"
+    default 0
+config MEMFAULT_DEMO_GESTURE_DETECT
+    bool "Implement gesture detect handler (so that demo doesn't crash)"
+    default 0

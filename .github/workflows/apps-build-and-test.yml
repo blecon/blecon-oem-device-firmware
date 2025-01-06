@@ -1,0 +1,79 @@
+# Copyright (c) Blecon Ltd
+# SPDX-License-Identifier: Apache-2.0
+name: build-and-test
+on:
+  push:
+    branches:
+      - main
+  pull_request: {}
+  workflow_dispatch: {}
+env:
+  BLECON_ACCOUNT: ${{ secrets.BLECON_FIRMWARE_CI_ACCOUNT }}
+  BLECON_APIKEY: ${{ secrets.BLECON_FIRMWARE_CI_APIKEY }}
+  BLECON_NETWORK: ${{ secrets.BLECON_FIRMWARE_CI_NETWORK }}
+  # The following hotspot UUID variables are pulled in from the github variables:
+  BLECON_HOTSPOT_ANDROID_UUID: ${{ vars.BLECON_HOTSPOT_ANDROID_UUID }}
+  BLECON_HOTSPOT_WINDOWS_UUID: ${{ vars.BLECON_HOTSPOT_WINDOWS_UUID }}
+  BLECON_HOTSPOT_IOS_UUID: ${{ vars.BLECON_HOTSPOT_IOS_UUID }}
+  BLECON_HOTSPOT_MACOS_UUID: ${{ vars.BLECON_HOTSPOT_MACOS_UUID }}
+jobs:
+  License:
+    runs-on: [self-hosted, linux, build]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: blecon-zephyr-apps
+      - name: Check license headers
+        uses: ./blecon-zephyr-apps/.github/actions/action-check-license
+  Build:
+    runs-on: [self-hosted, linux, build]
+    strategy:
+      matrix:
+        include:
+          - app: sensor-memfault
+            board: kkm_s5_bcn
+            variant: metrics
+            memfault_project: blecon-kkm-s5
+          - app: sensor-memfault
+            board: kkm_s5_bcn
+            variant: metrics-crashy-shake
+            memfault_project: blecon-kkm-s5
+          - app: sensor-default
+            board: kkm_s5_bcn
+            memfault_project: blecon-kkm-s5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: blecon-zephyr-apps
+      - name: Generate a bot token
+        id: generate_token
+        uses: tibdex/github-app-token@v2.1.0
+        with:
+          app_id: ${{ vars.BLECON_BOT_APP_ID }}
+          installation_retrieval_mode: id
+          installation_retrieval_payload: ${{ vars.BLECON_BOT_INSTALL_ID }}
+          private_key: ${{ secrets.BLECON_BOT_APP_PRIVATE_KEY }}
+      - id: build
+        name: Build app
+        uses: ./blecon-zephyr-apps/.github/actions/action-build-app
+        with:
+          app: ${{ matrix.app }}
+          board: ${{ matrix.board }}
+          board_qualifiers: ${{ matrix.board_qualifiers }}
+          build_number: ${{ github.run_number }}
+          variant: ${{ matrix.variant }}
+          release: false
+          git_token: ${{ steps.generate_token.outputs.token }}
+          memfault_org: ${{ vars.MEMFAULT_ORG }}
+          memfault_project: ${{ matrix.memfault_project }}
+          memfault_org_token: ${{ secrets.MEMFAULT_ORG_TOKEN }}
+      - name: Archive Zephyr binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.variant && format('{0}-{2}-{1}', matrix.app, matrix.board, matrix.variant) || format('{0}-{1}', matrix.app, matrix.board) }}
+          path: |
+            ${{ steps.build.outputs.archive }}
+          retention-days: ${{ github.ref == 'refs/heads/main' && 3 || 1 }} # Only archive build output from main branch
+  

@@ -1,0 +1,58 @@
+# Copyright (c) Blecon Ltd
+# SPDX-License-Identifier: Apache-2.0
+
+name: 'Build Zephyr firmware'
+inputs:
+  app:
+    description: 'App to build'
+    required: true
+  board:
+    description: 'Board to build for'
+    required: true
+  board_qualifiers:
+    description: 'Board qualifiers'
+    required: false
+    default: ''
+  build_number:
+    description: 'Build number'
+    required: false
+    default: 0
+  variant:
+    description: 'Application variant'
+    required: false
+    default: ''
+  release:
+    description: 'Release'
+    required: false
+    default: false
+  git_token:
+    description: 'Git Access Token'
+    required: true
+  memfault_org:
+    description: 'Memfault org'
+    required: true
+  memfault_project:
+    description: 'Memfault project'
+    required: true
+  memfault_org_token:
+    description: 'Memfault org api token'
+    required: true
+outputs:
+  archive:
+    description: 'The name of the archive containing the build artifacts'
+runs:
+  using: 'docker'
+  image: '../../../.devcontainer/Dockerfile'
+  entrypoint: './blecon-zephyr-apps/.github/actions/action-build-app/entrypoint.sh'
+  args:
+    - ${{ inputs.app }}
+    - ${{ inputs.board }}
+    - ${{ inputs.board_qualifiers }}
+    - ${{ inputs.build_number }}
+    - ${{ inputs.release }}
+    - ${{ inputs.variant }}
+  env:
+    BOT_GIT_TOKEN: ${{ inputs.git_token }}
+    MEMFAULT_ORG_TOKEN: ${{ inputs.memfault_org_token }}
+    MEMFAULT_ORG: ${{ inputs.memfault_org }}
+    MEMFAULT_PROJECT: ${{ inputs.memfault_project }}

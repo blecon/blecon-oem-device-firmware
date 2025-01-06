@@ -1,0 +1,71 @@
+# Copyright (c) Blecon Ltd
+# SPDX-License-Identifier: Apache-2.0
+name: release
+on:
+  workflow_dispatch: {}
+jobs:
+  Build:
+    runs-on: [self-hosted, linux, build]
+    strategy:
+      matrix:
+        include:
+          - app: sensor-memfault
+            board: kkm_s5_bcn
+            variant: metrics
+            memfault_project: blecon-kkm-s5
+          - app: sensor-memfault
+            board: kkm_s5_bcn
+            variant: metrics-crashy-shake
+            memfault_project: blecon-kkm-s5
+          - app: sensor-default
+            board: kkm_s5_bcn
+            memfault_project: blecon-kkm-s5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: blecon-zephyr-apps
+      - id: build
+        name: Build app
+        uses: ./blecon-zephyr-apps/.github/actions/action-build-app
+        with:
+          app: ${{ matrix.app }}
+          board: ${{ matrix.board }}
+          board_qualifiers: ${{ matrix.board_qualifiers }}
+          build_number: ${{ github.run_number }}
+          variant: ${{ matrix.variant }}
+          release: true
+          git_token: ${{ steps.generate_token.outputs.token }}
+          memfault_org: ${{ vars.MEMFAULT_ORG }}
+          memfault_project: ${{ matrix.memfault_project }}
+          memfault_org_token: ${{ secrets.MEMFAULT_ORG_TOKEN }}
+      - name: Archive Zephyr binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.variant && format('{0}-{2}-{1}', matrix.app, matrix.board, matrix.variant) || format('{0}-{1}', matrix.app, matrix.board) }}
+          path: |
+            ${{ steps.build.outputs.archive }}
+          retention-days: ${{ github.ref == 'refs/heads/main' && 3 || 1 }} # Only archive build output from main branch
+  Release:
+    runs-on: [self-hosted, linux, build]
+    needs: build
+    permissions:
+      contents: write
+    steps:
+      - name: Erase previous artifacts
+        run: rm -rf release-artifacts
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+      - name: Read version number
+        id: read_version
+        uses: ./blecon-zephyr-apps/.github/actions/action-get-version
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          tag_name: v${{ steps.read_version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            release-artifacts/**/*.tar.bz2

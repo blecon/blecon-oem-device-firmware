@@ -1,0 +1,11 @@
+//! Define custom system metrics to track. For example,
+// MEMFAULT_METRICS_KEY_DEFINE(main_task_stack_hwm, kMemfaultMetricType_Unsigned)
+// MEMFAULT_METRICS_KEY_DEFINE(ble_min_rssi, kMemfaultMetricType_Signed)
+// MEMFAULT_METRICS_KEY_DEFINE(mcu_sleep_time_ms, kMemfaultMetricType_Timer)
+MEMFAULT_METRICS_KEY_DEFINE(battery_voltage_mv, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(buffers_allocation_count, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(buffers_allocation_size, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE_WITH_SCALE_VALUE(temperature, kMemfaultMetricType_Signed, 1000)
+MEMFAULT_METRICS_KEY_DEFINE_WITH_SCALE_VALUE(humidity, kMemfaultMetricType_Unsigned, 1000)
+MEMFAULT_METRICS_KEY_DEFINE(motion_count, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(gesture_count, kMemfaultMetricType_Unsigned)
