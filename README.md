@@ -25,7 +25,7 @@ west update
 In the top-level workspace directory, start a build with
 
 ```
-west build -d <board> </path/to/application>
+west build -b <board> </path/to/application>
 ```
 
 ## Flashing the application
