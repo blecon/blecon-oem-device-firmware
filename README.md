@@ -25,13 +25,23 @@ west update
 In the top-level workspace directory, start a build with
 
 ```
-west build -b <board> -s <path to application>
+west build --sysbuild -b <board> <path_to_application>
 ```
 
-Where `<path to application>` is likely one of the projects in the `apps` directory of this repo (e.g., `apps/sensor-default`)
+Where `<path_to_application>` is one of the projects in the `apps` directory of this repo (e.g., `apps/sensor-default`)
 
 ## Flashing the application
 
 ```
 west flash
 ```
+
+## Using an alternative programmer to flash the firmware
+
+If you need to flash the application using an alternative programmer (e.g., the Nordic nRF Connect Programmer), use the
+`merged.hex` file found in the `build/` directory.
+
+## Uploading the firmware for OTA
+
+For OTA, you will need to use the `build/<appname>/zephyr/zephyr.signed.bin` firmware (signed firmware in `.bin` format, without
+the bootloader).
