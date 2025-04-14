@@ -2,7 +2,7 @@
 
 ## Setting up your workspace
 
-First, create a Zephyr workspace (i.e., directory) that will house this repo along with  the other repos that this project pulls in. 
+First, create a Zephyr workspace (i.e., directory) that will house this repo along with  the other repos that this project pulls in.
 
 Change to the workspace directory and clone this repo. e.g.,
 
@@ -25,8 +25,10 @@ west update
 In the top-level workspace directory, start a build with
 
 ```
-west build -d <board> </path/to/application>
+west build -b <board> -s <path to application>
 ```
+
+Where `<path to application>` is likely one of the projects in the `apps` directory of this repo (e.g., `apps/sensor-default`)
 
 ## Flashing the application
 
