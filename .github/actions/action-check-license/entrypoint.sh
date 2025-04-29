@@ -5,4 +5,4 @@
 set -e # Exit on first failure
 
 # Run license check script
-./blecon-zephyr-apps/scripts/license_check.sh
+./blecon-oem-firmware/scripts/license_check.sh

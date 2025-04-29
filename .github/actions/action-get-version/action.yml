@@ -8,4 +8,4 @@ outputs:
 runs:
   using: 'docker'
   image: '../../../.devcontainer/Dockerfile'
-  entrypoint: './blecon-zephyr-apps/.github/actions/action-get-version/entrypoint.sh'
+  entrypoint: './blecon-oem-firmware/.github/actions/action-get-version/entrypoint.sh'

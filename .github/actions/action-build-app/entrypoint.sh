@@ -4,19 +4,6 @@
 
 set -e # Exit on first failure
 
-# Use in-memory cache for git credentials if BOT_GIT_TOKEN is set
-
-if [ ! -z "$BOT_GIT_TOKEN" ]; then   
-    echo "Setting up git credentials"
-    git config --global credential.helper cache
-    git credential approve << EOF
-protocol=https
-host=github.com
-username=x-access-token
-password=${BOT_GIT_TOKEN}
-EOF
-fi
-
 # Cleanup build directory
 rm -rf build
 
@@ -39,12 +26,16 @@ if [ -z "$GITHUB_OUTPUT" ]; then
     echo "GitHub output: $GITHUB_OUTPUT"
 fi
 
+# Override git warnings about repo being owned by a different user
+# Docker runs as root while files are owned by the host user
+git config --system --add safe.directory '*'
+
 # Read app version from VERSION file
-app_version=$(cat blecon-zephyr-apps/VERSION)
+app_version=$(cat blecon-oem-device-firmware/VERSION)
 
 # If this is a release, the version should NOT exist already
 if [ "$is_release" == "true" ]; then
-    pushd blecon-zephyr-apps
+    pushd blecon-oem-device-firmware
     version_exists=$(git tag -l "v${app_version}")
     if [ ! -z "$version_exists" ]; then
         echo "Version $app_version already exists"
@@ -53,23 +44,10 @@ if [ "$is_release" == "true" ]; then
     popd
 fi
 
-# Init west workspace manually
-mkdir -p .west
-touch .west/config
-echo """
-[manifest]
-path = blecon-zephyr-apps
-file = west.yml
+west init -l blecon-oem-device-firmware
+west update --narrow -o=--depth=1
 
-[zephyr]
-base = zephyr
-
-""" > .west/config
-
-# Update west workspace
-west update
-
-source_dir="blecon-zephyr-apps/apps/${app}"
+source_dir="blecon-oem-device-firmware/apps/${app}"
 build_dir="${board}/${app}"
 if [ ! -z "$variant" ]; then
     build_dir+="/${variant}"
@@ -215,7 +193,7 @@ if [ "$use_sysbuild" == "true" ]; then
     # Add elf to list
     zephyr_elf_files+=" ${build_dir}/${app}/zephyr/zephyr.elf"
     zephyr_elf_files+=" ${build_dir}/mcuboot/zephyr/zephyr.elf"
-    
+
     # Add memfault elf to list
     memfault_elf_files+=" ${build_dir}/${app}/zephyr/zephyr.elf"
 
@@ -227,32 +205,13 @@ else
 
     # Add elf to list
     zephyr_elf_files+=" ${build_dir}/${app}/zephyr/zephyr.elf"
-    
+
     # Add memfault elf to list
     memfault_elf_files+=" ${build_dir}/${app}/zephyr/zephyr.elf"
 fi
 
 echo "Archives files: ${zephyr_archive_files}"
 echo "Elf files: ${zephyr_elf_files}"
-echo "Memfault elf files: ${memfault_elf_files}"
-
-# Upload build artifacts to Memfault
-
-# The CLI command is memfault upload-mcu-symbols <elf_file>
-for elf_file in $memfault_elf_files; do
-    echo "Uploading $elf_file to Memfault"
-    memfault upload-mcu-symbols build/$elf_file
-done
-
-# Upload OTA file to Memfault if set
-if [ ! -z "$memfault_ota_file" ]; then
-    echo "Uploading $memfault_ota_file to Memfault"
-    memfault upload-ota-payload \
-        --hardware-version ${memfault_hardware_version} \
-        --software-type main \
-        --software-version ${memfault_version} \
-        build/$memfault_ota_file
-fi
 
 # Archive build output
 tar cfj $ZEPHYR_ARCHIVE -C artifacts/${build_dir}/ $zephyr_archive_files

@@ -5,29 +5,27 @@ on:
   workflow_dispatch: {}
 jobs:
   Build:
-    runs-on: [self-hosted, linux, build]
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
           - app: sensor-memfault
             board: kkm_s5_bcn
             variant: metrics
-            memfault_project: blecon-kkm-s5
           - app: sensor-memfault
             board: kkm_s5_bcn
             variant: metrics-crashy-shake
-            memfault_project: blecon-kkm-s5
           - app: sensor-default
             board: kkm_s5_bcn
-            memfault_project: blecon-kkm-s5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          path: blecon-zephyr-apps
+          path: blecon-oem-device-firmware
+          fetch-tags: true
       - id: build
         name: Build app
-        uses: ./blecon-zephyr-apps/.github/actions/action-build-app
+        uses: ./blecon-oem-device-firmware/.github/actions/action-build-app
         with:
           app: ${{ matrix.app }}
           board: ${{ matrix.board }}
@@ -35,10 +33,6 @@ jobs:
           build_number: ${{ github.run_number }}
           variant: ${{ matrix.variant }}
           release: true
-          git_token: ${{ steps.generate_token.outputs.token }}
-          memfault_org: ${{ vars.MEMFAULT_ORG }}
-          memfault_project: ${{ matrix.memfault_project }}
-          memfault_org_token: ${{ secrets.MEMFAULT_ORG_TOKEN }}
       - name: Archive Zephyr binaries
         uses: actions/upload-artifact@v4
         with:
@@ -47,11 +41,15 @@ jobs:
             ${{ steps.build.outputs.archive }}
           retention-days: ${{ github.ref == 'refs/heads/main' && 3 || 1 }} # Only archive build output from main branch
   Release:
-    runs-on: [self-hosted, linux, build]
+    runs-on: ubuntu-latest
     needs: build
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: blecon-oem-device-firmware
       - name: Erase previous artifacts
         run: rm -rf release-artifacts
       - name: Download all artifacts
@@ -60,7 +58,9 @@ jobs:
           path: release-artifacts
       - name: Read version number
         id: read_version
-        uses: ./blecon-zephyr-apps/.github/actions/action-get-version
+        run: |
+          version=$(cat blecon-oem-device-firmware/VERSION)
+          echo "version=${version}" >> $GITHUB_OUTPUT
       - name: Release
         uses: softprops/action-gh-release@v1
         with:

@@ -11,7 +11,7 @@ if [ -z "$GITHUB_OUTPUT" ]; then
 fi
 
 # Get the version from the VERSION file
-version=$(cat blecon-zephyr-apps/VERSION)
+version=$(cat blecon-oem-firmware/VERSION)
 
 # Output the version
 echo "version=${version}" >> $GITHUB_OUTPUT

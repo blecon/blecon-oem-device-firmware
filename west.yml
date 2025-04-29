@@ -50,4 +50,4 @@ manifest:
       path: modules/lib/memfault-firmware-sdk
       url: https://github.com/memfault/memfault-firmware-sdk
   self:
-    path: blecon-zephyr-apps
+    path: blecon-oem-device-firmware
