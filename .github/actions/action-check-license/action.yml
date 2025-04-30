@@ -1,8 +1,0 @@
-# Copyright (c) Blecon Ltd
-# SPDX-License-Identifier: Apache-2.0
-
-name: 'Check license headers'
-runs:
-  using: 'docker'
-  image: '../../../.devcontainer/Dockerfile'
-  entrypoint: './blecon-oem-firmware/.github/actions/action-check-license/entrypoint.sh'
