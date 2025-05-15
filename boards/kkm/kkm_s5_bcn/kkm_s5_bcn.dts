@@ -177,7 +177,7 @@
         fm25q04: fm25q04b@0 {
                 compatible = "jedec,spi-nor";
                 reg = <0>;
-                spi-max-frequency = <104000000>;
+                spi-max-frequency = <100000000>;
                 jedec-id = [a1 40 13];
                 sfdp-bfp = [
                         e5 20 f1 ff  ff ff 3f 00  44 eb 08 6b  08 3b 80 bb
