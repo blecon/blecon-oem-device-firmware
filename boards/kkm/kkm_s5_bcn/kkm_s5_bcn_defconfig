@@ -12,3 +12,6 @@ CONFIG_USE_SEGGER_RTT=y
 
 # enable GPIO
 CONFIG_GPIO=y
+
+# dynamically detect flash part
+CONFIG_SPI_NOR_SFDP_RUNTIME=y
