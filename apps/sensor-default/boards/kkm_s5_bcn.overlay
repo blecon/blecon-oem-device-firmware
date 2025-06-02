@@ -1,0 +1,10 @@
+/*
+ * Copyright (c) Blecon Ltd
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/ {
+    zephyr,user {
+		io-channels = <&adc 0>;
+	};
+};
