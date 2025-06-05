@@ -1,5 +1,5 @@
-# Copyright (c) 2024 Nordic Semiconductor ASA
-# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+# Copyright (c) 2025 Nordic Semiconductor ASA
+# SPDX-License-Identifier: Apache-2.0
 
 identifier: mkbnl02sn/nrf54l15/cpuapp/ns
 name: nRF54l15-DK-nRF54l15-Application-Non-Secure
@@ -7,7 +7,6 @@ type: mcu
 arch: arm
 toolchain:
   - gnuarmemb
-  - xtools
   - zephyr
 ram: 256
 flash: 1524
@@ -20,3 +19,4 @@ supported:
   - watchdog
   - adc
   - i2s
+sysbuild: true
