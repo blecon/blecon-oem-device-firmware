@@ -9,6 +9,9 @@ config BLECON_LIB_OTA
 config BLECON_LIB_MOTION
     bool "Motion module"
     default n
+config BLECON_LIB_LED
+    bool "Status LED module"
+    default n
 config BLECON_APP_VERSION
     string "Blecon App version (semver)"
     default "0.0.0"
