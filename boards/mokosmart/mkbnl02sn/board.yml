@@ -1,3 +1,5 @@
+# Copyright (c) Blecon Ltd
+# SPDX-License-Identifier: Apache-2.0
 board:
   name: mkbnl02sn
   vendor: mokosmart
