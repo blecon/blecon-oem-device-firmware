@@ -31,6 +31,14 @@
 #include "blecon_zephyr/blecon_zephyr_memfault.h"
 #include "blecon/blecon_memfault_client.h"
 
+/*
+We make pulling in the LED blinking/status library
+optional since nRF52833 targets are memory-limited
+*/
+#ifdef CONFIG_BLECON_LIB_LED
+#include "led/blecon_led.h"
+#endif
+
 #define MEMFAULT_REQUEST_NAMESPACE "memfault"
 
 LOG_MODULE_REGISTER(main);
@@ -258,7 +266,7 @@ void send_data(void) {
                     b &= zcbor_float16_put(_cbor_state, temp_hum_event.humidity);
                     break;
                 }
-                case EVENT_TYPE_MOTION_START: {                    
+                case EVENT_TYPE_MOTION_START: {
                     blecon_assert(event_size == 0);
                     b &= zcbor_tstr_put_lit(_cbor_state, "motion_start");
                     break;
@@ -271,7 +279,7 @@ void send_data(void) {
                 case EVENT_TYPE_MOTION_VECTOR: {
                     blecon_assert(event_size == sizeof(struct motion_vector_event_t));
                     b &= zcbor_tstr_put_lit(_cbor_state, "motion_vector");
-                    
+
                     // Retrieve data
                     struct motion_vector_event_t vector_event = {0};
                     blecon_journal_get_event(&_journal_iter, &vector_event);
@@ -431,7 +439,7 @@ void on_connection(struct blecon_t* blecon) {
     ota_check_request();
 
     if(!_time_set) {
-        // Disconnect 
+        // Disconnect
         blecon_connection_terminate(&_blecon);
         return; // Can't send anything yet
     }
@@ -455,12 +463,16 @@ void on_ping_result(struct blecon_t* blecon) {
 }
 
 void led_timeout(struct k_timer *timer) {
+#ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_set_announce(false);
+#else
     int ret;
     ret = led_off(led_pwm, 0);
     if(ret < 0) {
         LOG_ERR("err=%d", ret);
         return;
     }
+#endif
 }
 
 int read_temp_hum(float *temp, float *hum) {
@@ -502,6 +514,9 @@ void input_cb(struct input_event *evt, void* user_data)
 }
 
 void on_announce_button(struct blecon_event_t* event, void* user_data) {
+#ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_set_announce(true);
+#else
     int ret;
 
     ret = led_blink(led_pwm, 0, FAST_BLINK_PERIOD_MS/2U, FAST_BLINK_PERIOD_MS/2U);
@@ -509,7 +524,7 @@ void on_announce_button(struct blecon_event_t* event, void* user_data) {
          LOG_ERR("blink error=%d", ret);
         return;
     }
-
+#endif
     if(!blecon_announce(&_blecon)) {
         LOG_ERR("Error: %s", "announce");
         return;
@@ -534,7 +549,7 @@ int main(void)
 		LOG_ERR("Device %s is not ready.", sht->name);
 		return 0;
 	}
-   
+
     ret = init_motion(MOTION_ACC_THRESHOLD, &motion_event_callbacks);
     if (ret) {
         LOG_ERR("Could not initialize acclerometer: %d", ret);
@@ -547,6 +562,10 @@ int main(void)
         LOG_ERR("Device %s is not ready\n", led_pwm->name);
         return 0;
     }
+
+#ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_init(led_pwm, 0);
+#endif
 
     // Get event loop
     _event_loop = blecon_zephyr_get_event_loop();
@@ -569,13 +588,13 @@ int main(void)
     struct blecon_memfault_t* memfault = blecon_zephyr_memfault_init();
 
     struct blecon_memfault_client_t memfault_client;
-    
+
     uint8_t blecon_id[BLECON_UUID_SZ] = {0};
     if(!blecon_get_identity(&_blecon, blecon_id)) {
         printk("Failed to get identity\r\n");
         return 1;
     }
-    
+
     blecon_memfault_client_init(&memfault_client, blecon_get_request_processor(&_blecon), memfault, blecon_id, MEMFAULT_REQUEST_NAMESPACE);
 
     // Init OTA module
@@ -583,7 +602,7 @@ int main(void)
 
      // Init request
     const static struct blecon_request_parameters_t request_params = {
-        .namespace = "kkm_s5_bcn",
+        .namespace = "sensor",
         .method = "log",
         .oneway = true,
         .request_content_type = "application/cbor",
@@ -667,12 +686,12 @@ static void motion_start_event(void) {
     LOG_DBG("Motion start");
 
     uint32_t timestamp;
-    
+
     if(!_time_set) {
         return; // Can't generate any data yet
     }
 
-    timestamp = get_time();            
+    timestamp = get_time();
     k_mutex_lock(&journal_mutex, K_FOREVER);
     blecon_journal_push(&_journal, timestamp, EVENT_TYPE_MOTION_START, NULL);
     k_mutex_unlock(&journal_mutex);
@@ -680,7 +699,7 @@ static void motion_start_event(void) {
 
 static void motion_stop_event(void) {
     LOG_DBG("Motion stop");
-    
+
     uint32_t timestamp;
 
     if(!_time_set) {
@@ -695,7 +714,7 @@ static void motion_stop_event(void) {
 
 static void motion_vector_event(float x, float y, float z) {
     LOG_DBG("Motion vector: %f %f %f", (double) x, (double) y, (double) z);
-    
+
     uint32_t timestamp;
 
     if(!_time_set) {
@@ -708,7 +727,7 @@ static void motion_vector_event(float x, float y, float z) {
     event_data.x = x;
     event_data.y = y;
     event_data.z = z;
-    
+
     k_mutex_lock(&journal_mutex, K_FOREVER);
     blecon_journal_push(&_journal, timestamp, EVENT_TYPE_MOTION_VECTOR, &event_data);
     k_mutex_unlock(&journal_mutex);
