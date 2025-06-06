@@ -23,8 +23,8 @@
 static const struct adc_dt_spec vdd_adc =
     ADC_DT_SPEC_GET_BY_IDX(DT_PATH(zephyr_user), 0);
 
-bool _battery_ready = false;
-bool _needs_calibrate = true;
+static bool _battery_ready = false;
+static bool _needs_calibrate = true;
 
 static int battery_setup(void)
 {
