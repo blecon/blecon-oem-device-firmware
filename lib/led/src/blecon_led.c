@@ -13,10 +13,10 @@
 #define ANNOUNCE_DURATION_MS 5000
 
 // LED blink patterns
-const uint32_t heartbeat_pattern[] = {30, 2000};
-const uint32_t announce_pattern[] = {100, 100};
-const uint32_t connecting_pattern[] = {30, 400};
-const uint32_t connected_pattern[] = {0};
+static const uint32_t heartbeat_pattern[] = {30, 2000};
+static const uint32_t announce_pattern[] = {100, 100};
+static const uint32_t connecting_pattern[] = {30, 400};
+static const uint32_t connected_pattern[] = {0};
 
 static struct k_thread _blecon_led_thread_data;
 static const struct device* _led_device;
