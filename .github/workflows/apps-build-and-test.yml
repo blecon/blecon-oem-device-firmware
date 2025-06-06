@@ -32,6 +32,9 @@ jobs:
             variant: metrics-crashy-shake
           - app: sensor-default
             board: kkm_s5_bcn
+          - app: sensor-default
+            board: mkbnl02sn
+            board_qualifiers: nrf54l15/cpuapp
     steps:
       - name: Checkout
         uses: actions/checkout@v4
