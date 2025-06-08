@@ -27,13 +27,11 @@
 };
 
 &lfxo {
-	/* load-capacitors = "external"; */
 	load-capacitors = "internal";
-	load-capacitance-femtofarad = <15500>;
+	load-capacitance-femtofarad = <5500>;
 };
 
 &hfxo {
-	/* load-capacitors = "external";*/
 	load-capacitors = "internal";
 	load-capacitance-femtofarad = <15000>;
 };
