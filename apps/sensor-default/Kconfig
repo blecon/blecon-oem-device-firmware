@@ -6,6 +6,12 @@ DT_CHOSEN_BLECON_LED_SAMPLING := blecon,led-sampling
 config LED_SAMPLING
     bool "Enable LED pattern on every sample"
     default y if $(dt_chosen_enabled,$(DT_CHOSEN_BLECON_LED_SAMPLING))
+config SAMPLING_PERIOD_SEC
+    int "Sensors sampling period (seconds)"
+    default 60
+config REPORTING_PERIOD_SEC
+    int "Reporting period (seconds)"
+    default 300
 endmenu
 
 menu "Zephyr Kernel"

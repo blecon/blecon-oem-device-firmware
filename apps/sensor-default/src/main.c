@@ -45,8 +45,6 @@ LOG_MODULE_REGISTER(main);
 
 #define MOTION_ACC_THRESHOLD 6.0    // Acceleration threshold to register a motion event (in m/s^2)
 
-#define TEMPERATURE_LOGGING_PERIOD_SEC 60
-#define REPORT_PERIOD_SEC 300
 #define REBOOT_PERIOD_SEC 4500    // How frequently to reboot
 
 #define TEMPERATURE_LOGGING_STACK 512
@@ -656,7 +654,7 @@ int main(void)
 
     blecon_journal_init(&_journal, _journal_array, sizeof(_journal_array), _journal_event_types_size, sizeof(_journal_event_types_size) / sizeof(uint32_t));
 
-    k_timer_start(&report_timer, K_SECONDS(REPORT_PERIOD_SEC), K_SECONDS(REPORT_PERIOD_SEC));
+    k_timer_start(&report_timer, K_SECONDS(CONFIG_REPORTING_PERIOD_SEC), K_SECONDS(CONFIG_REPORTING_PERIOD_SEC));
 
 #ifdef CONFIG_BLECON_LIB_LED
     blecon_led_set_connection_state(blecon_led_connection_state_connecting);
@@ -713,9 +711,9 @@ static void temperature_logger_thread(void *d0, void *d1, void* d2) {
             LOG_DBG("writing to journal (%u)", timestamp);
         }
         else {
-            _pre_uptime += TEMPERATURE_LOGGING_PERIOD_SEC;
+            _pre_uptime += CONFIG_SAMPLING_PERIOD_SEC;
         }
-        k_sleep(K_SECONDS(TEMPERATURE_LOGGING_PERIOD_SEC));
+        k_sleep(K_SECONDS(CONFIG_SAMPLING_PERIOD_SEC));
     }
 }
 
