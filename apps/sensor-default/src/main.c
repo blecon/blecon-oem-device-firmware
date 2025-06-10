@@ -187,6 +187,9 @@ uint32_t get_time(void) {
 }
 
 void send_data(void) {
+#ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_data_activity();
+#endif
     for(size_t p = 0; p < MAX_CONCURRENT_SEND_OPS; p++) {
         if(_send_finished) {
             return;
@@ -400,6 +403,10 @@ void submit_request_or_disconnect(bool first_request) {
 }
 
 void request_on_closed(struct blecon_request_t* request) {
+#ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_data_activity();
+#endif
+
     enum blecon_request_status_code_t status_code = blecon_request_get_status(request);
 
     if(status_code != blecon_request_status_ok) {
@@ -447,6 +454,9 @@ void request_on_data_received(struct blecon_request_receive_data_op_t* receive_d
 }
 
 void on_connection(struct blecon_t* blecon) {
+#ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_set_connection_state(blecon_led_connection_state_connected);
+#endif
     // Check for OTA update
     ota_check_request();
 
@@ -459,6 +469,9 @@ void on_connection(struct blecon_t* blecon) {
 }
 
 void on_disconnection(struct blecon_t* blecon) {
+#ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_set_connection_state(blecon_led_connection_state_disconnected);
+#endif
     LOG_DBG("%s", "Disconnected");
 }
 
@@ -553,6 +566,9 @@ void on_announce_button(struct blecon_event_t* event, void* user_data) {
 
 void on_start_connect(struct blecon_event_t* event, void* user_data) {
     LOG_DBG("%s", "Starting connection");
+#ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_set_connection_state(blecon_led_connection_state_connecting);
+#endif
     if(!blecon_connection_initiate(&_blecon)) {
         LOG_ERR("Error: %s", "could not initiate connection.");
     }
@@ -638,6 +654,10 @@ int main(void)
     blecon_journal_init(&_journal, _journal_array, sizeof(_journal_array), _journal_event_types_size, sizeof(_journal_event_types_size) / sizeof(uint32_t));
 
     k_timer_start(&report_timer, K_SECONDS(REPORT_PERIOD_SEC), K_SECONDS(REPORT_PERIOD_SEC));
+
+#ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_set_connection_state(blecon_led_connection_state_connecting);
+#endif
 
     // Initiate connection
     blecon_connection_initiate(&_blecon);
