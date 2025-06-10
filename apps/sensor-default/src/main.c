@@ -102,6 +102,12 @@ static struct blecon_event_t* _start_connect_event = NULL;
 
 const static struct device *led_pwm;
 const static struct device *sht;
+#if CONFIG_LED_SAMPLING
+// TODO replace with struct led_dt_spec once Zephyr is updated
+#define LED_SAMPLING_NODE DT_CHOSEN(blecon_led_sampling)
+const static struct device *led_sampling = DEVICE_DT_GET(DT_PARENT(LED_SAMPLING_NODE));
+const static uint32_t led_sampling_idx = DT_NODE_CHILD_IDX(LED_SAMPLING_NODE);
+#endif
 
 // Function prototypes
 static uint32_t get_time(void);
@@ -141,10 +147,16 @@ static void blecon_led_timeout(struct k_work *item);
 static void input_cb(struct input_event *evt, void* user_data);
 static void send_report(struct k_timer *timer);
 static void reboot(struct k_timer *timer);
+#if CONFIG_LED_SAMPLING
+static void sampling_led_timeout(struct k_timer *timer);
+#endif
 
 static struct k_work_delayable _blecon_led_timeout_work_item;
 K_TIMER_DEFINE(report_timer, send_report, NULL);
 K_TIMER_DEFINE(reboot_timer, reboot, NULL);
+#if CONFIG_LED_SAMPLING
+K_TIMER_DEFINE(sampling_led_timer, sampling_led_timeout, NULL);
+#endif
 
 INPUT_CALLBACK_DEFINE(NULL, input_cb, NULL);
 
@@ -500,6 +512,12 @@ void reboot(struct k_timer *timer) {
     sys_reboot(SYS_REBOOT_WARM);
 }
 
+#if CONFIG_LED_SAMPLING
+void sampling_led_timeout(struct k_timer *timer) {
+    led_off(led_sampling, led_sampling_idx);
+}
+#endif
+
 void input_cb(struct input_event *evt, void* user_data)
 {
     switch (evt->code) {
@@ -655,6 +673,10 @@ static void temperature_logger_thread(void *d0, void *d1, void* d2) {
     float temperature, humidity;
 
     while(true) {
+        #if CONFIG_LED_SAMPLING
+        led_on(led_sampling, led_sampling_idx);
+        k_timer_start(&sampling_led_timer, K_MSEC(30), K_FOREVER);
+        #endif
         if (_time_set) {
             ret = read_temp_hum(&temperature, &humidity);
 
