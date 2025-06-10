@@ -581,10 +581,6 @@ int main(void)
         return 0;
     }
 
-#ifdef CONFIG_BLECON_LIB_LED
-    blecon_led_init(led_pwm, 0);
-#endif
-
     // Get event loop
     _event_loop = blecon_zephyr_get_event_loop();
 
