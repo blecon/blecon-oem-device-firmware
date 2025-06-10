@@ -13,11 +13,6 @@ enum blecon_led_connection_state_t {
     blecon_led_connection_state_connected,
 };
 
-/// @brief Set LED device and number as the Blecon status LED
-/// @param led_device
-/// @param led_num
-void blecon_led_init(const struct device* led_device, uint32_t led_num);
-
 /// @brief Indicate data activity on the Blecon LED
 void blecon_led_data_activity();
 
