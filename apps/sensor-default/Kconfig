@@ -1,0 +1,13 @@
+# Copyright (c) Blecon Ltd
+# SPDX-License-Identifier: Apache-2.0
+
+menu  "Blecon Sensor (Default)"
+DT_CHOSEN_BLECON_LED_SAMPLING := blecon,led-sampling
+config LED_SAMPLING
+    bool "Enable LED pattern on every sample"
+    default y if $(dt_chosen_enabled,$(DT_CHOSEN_BLECON_LED_SAMPLING))
+endmenu
+
+menu "Zephyr Kernel"
+source "Kconfig.zephyr"
+endmenu
