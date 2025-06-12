@@ -1,0 +1,25 @@
+/*
+ * Copyright (c) 2025 Blecon Ltd
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/ {
+	zephyr,user {
+    	io-channels = <&adc 0>;
+   	};
+	chosen {
+		blecon,led-gesture-1 = &pwm_led0;
+		blecon,led-gesture-2 = &pwm_led1;
+		blecon,led-status = &led2;
+		blecon,accelerometer = &lis2dh12;
+	};
+};
+
+// We don't use cpuflpr, so allocate all RRAM abd SRAM to cpuapp
+&cpuapp_rram {
+	reg = <0x0 DT_SIZE_K(1524)>;
+};
+
+&cpuapp_sram {
+    reg = <0x20000000 DT_SIZE_K(256)>;
+};

@@ -1,0 +1,16 @@
+# Copyright (c) Blecon Ltd
+# SPDX-License-Identifier: Apache-2.0
+
+menu  "Blecon Sensor (ML)"
+DT_CHOSEN_BLECON_LED_GESTURE := blecon,led-gesture
+config LED_GESTURE
+    bool "Enable LED pattern on gesture detection"
+    default y if $(dt_chosen_enabled,$(DT_CHOSEN_BLECON_LED_GESTURE))
+config REPORTING_PERIOD_SEC
+    int "Reporting period (seconds)"
+    default 300
+endmenu
+
+menu "Zephyr Kernel"
+source "Kconfig.zephyr"
+endmenu
