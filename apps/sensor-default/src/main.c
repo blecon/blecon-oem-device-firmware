@@ -142,7 +142,7 @@ static void input_cb(struct input_event *evt, void* user_data);
 static void send_report(struct k_timer *timer);
 static void reboot(struct k_timer *timer);
 
-struct k_work_delayable _blecon_led_timeout_work_item;
+static struct k_work_delayable _blecon_led_timeout_work_item;
 K_TIMER_DEFINE(report_timer, send_report, NULL);
 K_TIMER_DEFINE(reboot_timer, reboot, NULL);
 
