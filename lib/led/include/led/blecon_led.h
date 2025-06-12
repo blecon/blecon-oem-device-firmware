@@ -27,3 +27,6 @@ void blecon_led_set_connection_state(enum blecon_led_connection_state_t state);
 
 /// @brief Indicate that Blecon is announcing device ID
 void blecon_led_set_announce(bool state);
+
+/// @brief Set whether LED displays a heartbeat pattern
+void blecon_led_set_heartbeat(bool state);
