@@ -45,8 +45,6 @@ LOG_MODULE_REGISTER(main);
 
 #define MOTION_ACC_THRESHOLD 6.0    // Acceleration threshold to register a motion event (in m/s^2)
 
-#define TEMPERATURE_LOGGING_PERIOD_SEC 60
-#define REPORT_PERIOD_SEC 300
 #define REBOOT_PERIOD_SEC 4500    // How frequently to reboot
 
 #define TEMPERATURE_LOGGING_STACK 512
@@ -102,6 +100,12 @@ static struct blecon_event_t* _start_connect_event = NULL;
 
 const static struct device *led_pwm;
 const static struct device *sht;
+#if CONFIG_LED_SAMPLING
+// TODO replace with struct led_dt_spec once Zephyr is updated
+#define LED_SAMPLING_NODE DT_CHOSEN(blecon_led_sampling)
+const static struct device *led_sampling = DEVICE_DT_GET(DT_PARENT(LED_SAMPLING_NODE));
+const static uint32_t led_sampling_idx = DT_NODE_CHILD_IDX(LED_SAMPLING_NODE);
+#endif
 
 // Function prototypes
 static uint32_t get_time(void);
@@ -137,14 +141,20 @@ const static struct blecon_callbacks_t blecon_callbacks = {
 };
 
 // Input and timer callbacks
-static void led_timeout(struct k_timer *timer);
+static void blecon_led_timeout(struct k_timer *timer);
 static void input_cb(struct input_event *evt, void* user_data);
 static void send_report(struct k_timer *timer);
 static void reboot(struct k_timer *timer);
+#if CONFIG_LED_SAMPLING
+static void sampling_led_timeout(struct k_timer *timer);
+#endif
 
-K_TIMER_DEFINE(led_timer, led_timeout, NULL);
+K_TIMER_DEFINE(blecon_led_timer, blecon_led_timeout, NULL);
 K_TIMER_DEFINE(report_timer, send_report, NULL);
 K_TIMER_DEFINE(reboot_timer, reboot, NULL);
+#if CONFIG_LED_SAMPLING
+K_TIMER_DEFINE(sampling_led_timer, sampling_led_timeout, NULL);
+#endif
 
 INPUT_CALLBACK_DEFINE(NULL, input_cb, NULL);
 
@@ -175,6 +185,9 @@ uint32_t get_time(void) {
 }
 
 void send_data(void) {
+#ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_data_activity();
+#endif
     for(size_t p = 0; p < MAX_CONCURRENT_SEND_OPS; p++) {
         if(_send_finished) {
             return;
@@ -388,6 +401,10 @@ void submit_request_or_disconnect(bool first_request) {
 }
 
 void request_on_closed(struct blecon_request_t* request) {
+#ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_data_activity();
+#endif
+
     enum blecon_request_status_code_t status_code = blecon_request_get_status(request);
 
     if(status_code != blecon_request_status_ok) {
@@ -435,6 +452,9 @@ void request_on_data_received(struct blecon_request_receive_data_op_t* receive_d
 }
 
 void on_connection(struct blecon_t* blecon) {
+#ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_set_connection_state(blecon_led_connection_state_connected);
+#endif
     // Check for OTA update
     ota_check_request();
 
@@ -447,6 +467,9 @@ void on_connection(struct blecon_t* blecon) {
 }
 
 void on_disconnection(struct blecon_t* blecon) {
+#ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_set_connection_state(blecon_led_connection_state_disconnected);
+#endif
     LOG_DBG("%s", "Disconnected");
 }
 
@@ -462,7 +485,7 @@ void on_ping_result(struct blecon_t* blecon) {
     return;
 }
 
-void led_timeout(struct k_timer *timer) {
+void blecon_led_timeout(struct k_timer *timer) {
 #ifdef CONFIG_BLECON_LIB_LED
     blecon_led_set_announce(false);
 #else
@@ -500,6 +523,12 @@ void reboot(struct k_timer *timer) {
     sys_reboot(SYS_REBOOT_WARM);
 }
 
+#if CONFIG_LED_SAMPLING
+void sampling_led_timeout(struct k_timer *timer) {
+    led_off(led_sampling, led_sampling_idx);
+}
+#endif
+
 void input_cb(struct input_event *evt, void* user_data)
 {
     switch (evt->code) {
@@ -530,11 +559,14 @@ void on_announce_button(struct blecon_event_t* event, void* user_data) {
         return;
     }
 
-    k_timer_start(&led_timer, K_SECONDS(5), K_FOREVER);
+    k_timer_start(&blecon_led_timer, K_SECONDS(5), K_FOREVER);
 }
 
 void on_start_connect(struct blecon_event_t* event, void* user_data) {
     LOG_DBG("%s", "Starting connection");
+#ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_set_connection_state(blecon_led_connection_state_connecting);
+#endif
     if(!blecon_connection_initiate(&_blecon)) {
         LOG_ERR("Error: %s", "could not initiate connection.");
     }
@@ -562,10 +594,6 @@ int main(void)
         LOG_ERR("Device %s is not ready\n", led_pwm->name);
         return 0;
     }
-
-#ifdef CONFIG_BLECON_LIB_LED
-    blecon_led_init(led_pwm, 0);
-#endif
 
     // Get event loop
     _event_loop = blecon_zephyr_get_event_loop();
@@ -623,7 +651,11 @@ int main(void)
 
     blecon_journal_init(&_journal, _journal_array, sizeof(_journal_array), _journal_event_types_size, sizeof(_journal_event_types_size) / sizeof(uint32_t));
 
-    k_timer_start(&report_timer, K_SECONDS(REPORT_PERIOD_SEC), K_SECONDS(REPORT_PERIOD_SEC));
+    k_timer_start(&report_timer, K_SECONDS(CONFIG_REPORTING_PERIOD_SEC), K_SECONDS(CONFIG_REPORTING_PERIOD_SEC));
+
+#ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_set_connection_state(blecon_led_connection_state_connecting);
+#endif
 
     // Initiate connection
     blecon_connection_initiate(&_blecon);
@@ -652,6 +684,10 @@ static void temperature_logger_thread(void *d0, void *d1, void* d2) {
     float temperature, humidity;
 
     while(true) {
+        #if CONFIG_LED_SAMPLING
+        led_on(led_sampling, led_sampling_idx);
+        k_timer_start(&sampling_led_timer, K_MSEC(30), K_FOREVER);
+        #endif
         if (_time_set) {
             ret = read_temp_hum(&temperature, &humidity);
 
@@ -672,9 +708,9 @@ static void temperature_logger_thread(void *d0, void *d1, void* d2) {
             LOG_DBG("writing to journal (%u)", timestamp);
         }
         else {
-            _pre_uptime += TEMPERATURE_LOGGING_PERIOD_SEC;
+            _pre_uptime += CONFIG_SAMPLING_PERIOD_SEC;
         }
-        k_sleep(K_SECONDS(TEMPERATURE_LOGGING_PERIOD_SEC));
+        k_sleep(K_SECONDS(CONFIG_SAMPLING_PERIOD_SEC));
     }
 }
 

@@ -11,7 +11,7 @@ config BLECON_LIB_MOTION
     default n
 config BLECON_LIB_LED
     bool "Status LED module"
-    default n
+    default y if $(dt_chosen_enabled,$(DT_CHOSEN_BLECON_LED_STATUS))
 config BLECON_APP_VERSION
     string "Blecon App version (semver)"
     default "0.0.0"
