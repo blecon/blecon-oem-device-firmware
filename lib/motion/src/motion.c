@@ -5,67 +5,70 @@
 #include <zephyr/logging/log.h>
 #include "motion/motion.h"
 
+#define LIS2DH_HP_IA1   1 << 0  // Use high-pass filtered data for INT1
+#define LIS2DH_HP_IA2   1 << 1  // Use high-pass filtered data for INT2
+
 LOG_MODULE_REGISTER(motion);
 
 enum blecon_motion_state_t {
     blecon_motion_state_uninitialized = 0,
     blecon_motion_state_waiting_for_motion,
-    blecon_motion_state_sampling_motion,
+    blecon_motion_state_in_motion,
 };
 
-#define BLECON_MOTION_READINGS_MAX 25
+#define MOTION_TIMEOUT_MS 200
+
 struct blecon_motion_t {
+    const struct device *dev;
     const struct blecon_motion_event_callbacks_t* callbacks;
-    volatile bool transfer_pending;
     enum blecon_motion_state_t state;
-    float readings[BLECON_MOTION_READINGS_MAX][3];
-    size_t readings_count;
-    size_t store_index;
+    int64_t last_motion_time;
+    struct k_work_delayable stop_work_item;
 };
-static struct blecon_motion_t _motion = {0};
 
-static struct sensor_trigger _data_trig;
+static struct blecon_motion_t _motion = {0};
 static struct sensor_trigger _motion_trig;
 
 static int blecon_motion_set_sampling_freq(const struct device *dev, int32_t sampling_freq);
-static void blecon_motion_start_sampling(const struct device *dev);
-static void blecon_motion_stop_sampling(const struct device *dev);
-static void data_ready_handler(const struct device *dev, const struct sensor_trigger *trig);
+static void blecon_motion_on_stop(struct k_work *);
 static void motion_trigger_handler(const struct device *dev, const struct sensor_trigger *trig);
 
 int init_motion(float accel_threshold, const struct blecon_motion_event_callbacks_t* callbacks) {
 	int ret;
-    
+
     const struct device *accel = DEVICE_DT_GET_ANY(st_lis2dh);
 	if (!device_is_ready(accel)) {
 		LOG_ERR("Device %s is not ready.", accel->name);
 		return 0;
 	}
 
-    _data_trig.type = SENSOR_TRIG_DATA_READY;
-    _data_trig.chan = SENSOR_CHAN_ACCEL_XYZ;
+    _motion.dev = accel;
+    k_work_init_delayable(&_motion.stop_work_item, blecon_motion_on_stop);
 
     _motion_trig.type = SENSOR_TRIG_DELTA;
     _motion_trig.chan = SENSOR_CHAN_ACCEL_XYZ;
 
-    blecon_motion_set_sampling_freq(accel, 10);
+    blecon_motion_set_sampling_freq(accel, 50);
 
-    // Slope threshold in m/s^2
-    struct sensor_value slope_th;    
+    // Set threshold that acceleration needs to exceed to register as motion
+    // This value is in m/s^2
+    struct sensor_value slope_th;
     ret = sensor_value_from_float(&slope_th, accel_threshold);
     if (ret != 0) {
         LOG_ERR("Invalid motion threshold %f", (double) accel_threshold);
         return ret;
     }
 
-    // Set high-pass filter on INT2 (motion interrupt)
+    // Use high pass filtered data for interrupt generation
+    // (subtract out gravity when sensing motion)
     struct sensor_value hp_filt = {
-        .val1 = 2,
+        .val1 = LIS2DH_HP_IA1 | LIS2DH_HP_IA2
     };
 
-    // Slope duration is val1 * 1/ODR
+    // Set duration that acceleration must be over the threshold to register as motion
+    // This is in units of 1/ODR seconds.
     struct sensor_value slope_dur = {
-        .val1 = 2,
+        .val1 = 1,
         .val2 = 0,
     };
 
@@ -75,8 +78,7 @@ int init_motion(float accel_threshold, const struct blecon_motion_event_callback
     if (ret != 0) {
         LOG_ERR("Failed to enable HP filter: %d", ret);
         return ret;
-    }
-
+    };
 
     ret = sensor_attr_set(accel, _motion_trig.chan,
                         SENSOR_ATTR_SLOPE_TH,
@@ -93,7 +95,7 @@ int init_motion(float accel_threshold, const struct blecon_motion_event_callback
         LOG_ERR("Failed to set motion duration: %d", ret);
         return ret;
     }
-    
+
     ret = sensor_trigger_set(accel, &_motion_trig, motion_trigger_handler);
     if (ret != 0) {
         LOG_ERR("Failed to set motion trigger: %d", ret);
@@ -106,58 +108,27 @@ int init_motion(float accel_threshold, const struct blecon_motion_event_callback
     return 0;
 }
 
-static void data_ready_handler(const struct device *dev,
-			            const struct sensor_trigger *trig) {
+static int sample_accel(const struct device *dev, float *out_x, float *out_y, float *out_z) {
+    int rc;
 
-    if(_motion.state == blecon_motion_state_sampling_motion) {
-        struct sensor_value accel[3];
-    
-        int rc = sensor_sample_fetch(dev);
-        rc = sensor_channel_get(dev,
-                        SENSOR_CHAN_ACCEL_XYZ,
-                        accel);
-        
-        for(int dim = 0; dim < 3; dim++) {
-            _motion.readings[_motion.store_index][dim] = sensor_value_to_float(&accel[dim]);
-        }
-        _motion.readings_count = MIN(_motion.readings_count + 1, BLECON_MOTION_READINGS_MAX);
-        _motion.store_index = (_motion.store_index + 1) % BLECON_MOTION_READINGS_MAX;
-
-        if (_motion.readings_count == BLECON_MOTION_READINGS_MAX){
-            //Check if motion has stopped
-            float accel_sum[3] = {0.0, 0.0, 0.0};
-            float variance = 0.0;
-
-            for(size_t p = 0; p < BLECON_MOTION_READINGS_MAX; p++) {
-                for(int dim=0; dim < 3; dim++) {
-                    accel_sum[dim] += _motion.readings[p][dim];
-                }
-            }
-
-            for(size_t p = 0; p < BLECON_MOTION_READINGS_MAX; p++) {
-                for(int dim=0; dim < 3; dim++) {
-                    variance += (_motion.readings[p][dim] * BLECON_MOTION_READINGS_MAX - accel_sum[dim]) * 
-                                (_motion.readings[p][dim] * BLECON_MOTION_READINGS_MAX - accel_sum[dim]);
-                }
-            }
-            
-            // If standard deviation of readings is <0.125g, consider motion stopped
-            if(variance <= (0.125F * BLECON_MOTION_READINGS_MAX)
-                           * (0.125F * BLECON_MOTION_READINGS_MAX) 
-                           * (3.0F * BLECON_MOTION_READINGS_MAX)) 
-            {
-                _motion.callbacks->stop();
-                blecon_motion_stop_sampling(dev);
-
-                // Compute average
-                float avg_x = accel_sum[0] / BLECON_MOTION_READINGS_MAX;
-                float avg_y = accel_sum[1] / BLECON_MOTION_READINGS_MAX;
-                float avg_z = accel_sum[2] / BLECON_MOTION_READINGS_MAX;
-
-                _motion.callbacks->vector(avg_x, avg_y, avg_z);
-            }
-        }
+    struct sensor_value accel[3];
+    rc = sensor_sample_fetch(dev);
+    if (rc < 0) {
+        LOG_ERR("could not fetch data");
+        return rc;
     }
+
+    rc = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
+    if (rc < 0) {
+        LOG_ERR("could not get data");
+        return rc;
+    }
+
+    *out_x = sensor_value_to_float(&accel[0]);
+    *out_y = sensor_value_to_float(&accel[1]);
+    *out_z = sensor_value_to_float(&accel[2]);
+
+    return 0;
 }
 
 static void motion_trigger_handler(const struct device *dev,
@@ -165,44 +136,34 @@ static void motion_trigger_handler(const struct device *dev,
 
     if( _motion.state == blecon_motion_state_waiting_for_motion ) {
         _motion.callbacks->start();
-        blecon_motion_start_sampling(dev);
     }
+
+    _motion.state = blecon_motion_state_in_motion;
+    _motion.last_motion_time = k_uptime_get();
+    k_work_schedule(&_motion.stop_work_item, K_MSEC(MOTION_TIMEOUT_MS));
 }
 
-void blecon_motion_start_sampling(const struct device *dev) {
+void blecon_motion_on_stop(struct k_work *item) {
     int ret;
+    float x = 0.0;
+    float y = 0.0;
+    float z = 0.0;
 
-    ret  = blecon_motion_set_sampling_freq(dev, 100);
-    if (ret != 0) {
+    struct k_work_delayable *delay_item = k_work_delayable_from_work(item);
+    struct blecon_motion_t *motion = CONTAINER_OF(delay_item, struct blecon_motion_t, stop_work_item);
+
+
+    if(k_uptime_get() < motion->last_motion_time + MOTION_TIMEOUT_MS) {
+        int64_t remain = (motion->last_motion_time + MOTION_TIMEOUT_MS) - k_uptime_get();
+        k_work_schedule(&motion->stop_work_item, K_MSEC(remain));
         return;
     }
 
-    ret = sensor_trigger_set(dev, &_data_trig, data_ready_handler);
-    if (ret != 0) {
-        LOG_ERR("Failed to set data ready trigger: %d\n", ret);
-        return;
-    }
-
-    _motion.state = blecon_motion_state_sampling_motion;
-    _motion.readings_count = 0;
-    _motion.store_index = 0;
-}
-
-void blecon_motion_stop_sampling(const struct device *dev) {
-    int ret;
-
-    ret  = blecon_motion_set_sampling_freq(dev, 50);
-    if (ret != 0) {
-        return;
-    }
-
-    ret = sensor_trigger_set(dev, &_data_trig, NULL);
-    if (ret != 0) {
-        LOG_ERR("Failed to clear data ready trigger: %d\n", ret);
-        return;
-    }
+    ret = sample_accel(motion->dev, &x, &y, &z);
 
     _motion.state = blecon_motion_state_waiting_for_motion;
+    _motion.callbacks->stop();
+    _motion.callbacks->vector(x, y, z);
 }
 
 int blecon_motion_set_sampling_freq(const struct device *dev, int32_t sampling_freq) {
@@ -213,7 +174,7 @@ int blecon_motion_set_sampling_freq(const struct device *dev, int32_t sampling_f
             .val1 = sampling_freq,
         };
 
-        ret = sensor_attr_set(dev, _data_trig.chan,
+        ret = sensor_attr_set(dev, SENSOR_CHAN_ACCEL_XYZ,
                         SENSOR_ATTR_SAMPLING_FREQUENCY,
                         &odr);
         if (ret != 0) {
