@@ -73,6 +73,7 @@ static uint8_t _journal_array[BLECON_JOURNAL_SZ];
 const static size_t _journal_event_types_size[] = {0, 0, 0, 4 * 3, 4 * 2};
 static struct blecon_journal_iterator_t _journal_iter;
 
+static atomic_t _leds_enabled = ATOMIC_INIT(0);
 static bool _time_set = false;
 static uint32_t _pre_uptime = 0;
 static uint32_t _epoch = 0;
@@ -148,6 +149,7 @@ static void reboot(struct k_timer *timer);
 #if CONFIG_LED_SAMPLING
 static void sampling_led_timeout(struct k_timer *timer);
 #endif
+static void disable_leds(struct k_work *work);
 
 static struct k_work_delayable _blecon_led_timeout_work_item;
 K_TIMER_DEFINE(report_timer, send_report, NULL);
@@ -155,6 +157,7 @@ K_TIMER_DEFINE(reboot_timer, reboot, NULL);
 #if CONFIG_LED_SAMPLING
 K_TIMER_DEFINE(sampling_led_timer, sampling_led_timeout, NULL);
 #endif
+K_WORK_DELAYABLE_DEFINE(led_enabled_work, disable_leds);
 
 INPUT_CALLBACK_DEFINE(NULL, input_cb, NULL);
 
@@ -529,6 +532,13 @@ void sampling_led_timeout(struct k_timer *timer) {
 }
 #endif
 
+void disable_leds(struct k_work *work) {
+    #ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_enable(false);
+    #endif
+    atomic_clear_bit(&_leds_enabled, 0);
+}
+
 void input_cb(struct input_event *evt, void* user_data)
 {
     switch (evt->code) {
@@ -543,7 +553,11 @@ void input_cb(struct input_event *evt, void* user_data)
 }
 
 void on_announce_button(struct blecon_event_t* event, void* user_data) {
+    // Enable LEDs for a while and start announcing
+    atomic_set_bit(&_leds_enabled, 0);
+    k_work_reschedule(&led_enabled_work, K_MINUTES(CONFIG_LEDS_ENABLED_DURATION_MIN));
 #ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_enable(true);
     blecon_led_set_announce(true);
 #else
     int ret;
@@ -688,8 +702,10 @@ static void temperature_logger_thread(void *d0, void *d1, void* d2) {
 
     while(true) {
         #if CONFIG_LED_SAMPLING
-        led_on(led_sampling, led_sampling_idx);
-        k_timer_start(&sampling_led_timer, K_MSEC(30), K_FOREVER);
+        if(atomic_test_bit(&_leds_enabled, 0)) {
+            led_on(led_sampling, led_sampling_idx);
+            k_timer_start(&sampling_led_timer, K_MSEC(30), K_FOREVER);
+        }
         #endif
         if (_time_set) {
             ret = read_temp_hum(&temperature, &humidity);
