@@ -78,7 +78,7 @@ int init_motion(float accel_threshold, const struct blecon_motion_event_callback
     if (ret != 0) {
         LOG_ERR("Failed to enable HP filter: %d", ret);
         return ret;
-    };
+    }
 
     ret = sensor_attr_set(accel, _motion_trig.chan,
                         SENSOR_ATTR_SLOPE_TH,
