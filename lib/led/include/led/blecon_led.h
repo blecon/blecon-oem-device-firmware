@@ -7,16 +7,18 @@
 
 #include <zephyr/kernel.h>
 
+#include "stdbool.h"
+
 enum blecon_led_connection_state_t {
     blecon_led_connection_state_disconnected,
     blecon_led_connection_state_connecting,
     blecon_led_connection_state_connected,
 };
 
-/// @brief Set LED device and number as the Blecon status LED
-/// @param led_device
-/// @param led_num
-void blecon_led_init(const struct device* led_device, uint32_t led_num);
+/// @brief Enable or disable the Blecon LED
+/// @param enable true to enable the LED, false to disable it
+/// @note When disabled (default state), the LED will not blink or indicate any state
+void blecon_led_enable(bool enable);
 
 /// @brief Indicate data activity on the Blecon LED
 void blecon_led_data_activity();

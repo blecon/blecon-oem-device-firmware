@@ -18,9 +18,12 @@ static const uint32_t announce_pattern[] = {100, 100};
 static const uint32_t connecting_pattern[] = {30, 400};
 static const uint32_t connected_pattern[] = {0};
 
-static struct k_thread _blecon_led_thread_data;
-static const struct device* _led_device;
-static uint32_t _led_num;
+// TODO replace with struct led_dt_spec once Zephyr is updated
+#define BLECON_LED_STATUS_NODE DT_CHOSEN(blecon_led_status)
+const static struct device *_led_device = DEVICE_DT_GET(DT_PARENT(BLECON_LED_STATUS_NODE));
+const static uint32_t _led_idx = DT_NODE_CHILD_IDX(BLECON_LED_STATUS_NODE);
+
+static bool _is_enabled = false;
 static bool _is_announcing = false;
 static bool _data_activity = false;
 static bool _has_heartbeat = false;
@@ -30,29 +33,23 @@ static void blecon_led_thread_entry(void *, void *, void *);
 
 K_MUTEX_DEFINE(blecon_led_mutex);
 K_CONDVAR_DEFINE(blecon_led_condvar);
-K_THREAD_STACK_DEFINE(blecon_led_thread_area, BLECON_LED_THREAD_STACK_SIZE);
 
-void blecon_led_init(const struct device* led_device, uint32_t led_num) {
-    _led_device = led_device;
-    _led_num = led_num;
-    _connection_state = blecon_led_connection_state_disconnected;
-
-    k_thread_create(&_blecon_led_thread_data, blecon_led_thread_area,
-        K_THREAD_STACK_SIZEOF(blecon_led_thread_area),
-        blecon_led_thread_entry,
-        NULL, NULL, NULL,
-        BLECON_LED_THREAD_PRIORITY, 0, K_NO_WAIT);
-}
+K_THREAD_DEFINE(blecon_led_thread_id, BLECON_LED_THREAD_STACK_SIZE,
+                blecon_led_thread_entry, NULL, NULL, NULL,
+                BLECON_LED_THREAD_PRIORITY, 0, 0);
 
 static void blecon_led_thread_entry(void* unused1, void* unused2, void* unused3) {
     k_timeout_t next_frame_time = K_NO_WAIT;
     uint32_t delay = 0;
     bool blink = false;
+    bool disabled = false;
     size_t pattern_frame = 0;
 
     while(true) {
         k_mutex_lock(&blecon_led_mutex, K_FOREVER);
         k_condvar_wait(&blecon_led_condvar, &blecon_led_mutex, next_frame_time);
+
+        disabled = !_is_enabled;
 
         if(_is_announcing) {
             pattern_frame = pattern_frame % ARRAY_SIZE(announce_pattern);
@@ -76,7 +73,7 @@ static void blecon_led_thread_entry(void* unused1, void* unused2, void* unused3)
                     break;
                 case blecon_led_connection_state_connected:
                     if(_data_activity) {
-                        led_off(_led_device, _led_num);
+                        led_off(_led_device, _led_idx);
                         _data_activity = false;
                         blink = true;
                         delay = BLINK_DELAY_MS;
@@ -90,21 +87,25 @@ static void blecon_led_thread_entry(void* unused1, void* unused2, void* unused3)
         }
         k_mutex_unlock(&blecon_led_mutex);
 
-        if(blink) {
+        if(disabled) {
+            led_off(_led_device, _led_idx);
+            pattern_frame = 0; // Reset pattern frame when disabled
+        }
+        else if(blink) {
             blink = false;
         }
         else {
             if(pattern_frame % 2 == 0) {
-                led_on(_led_device, _led_num);
+                led_on(_led_device, _led_idx);
             }
             else {
-                led_off(_led_device, _led_num);
+                led_off(_led_device, _led_idx);
             }
             pattern_frame += 1;
         }
 
         // Wait until next frame for pattern (or state change)
-        if(delay == 0) {
+        if((delay == 0) || disabled) {
             next_frame_time = K_FOREVER;
         }
         else {
@@ -113,30 +114,45 @@ static void blecon_led_thread_entry(void* unused1, void* unused2, void* unused3)
     }
 }
 
+void blecon_led_enable(bool enable) {
+    k_mutex_lock(&blecon_led_mutex, K_FOREVER);
+    _is_enabled = enable;
+    k_condvar_signal(&blecon_led_condvar);
+    k_mutex_unlock(&blecon_led_mutex);
+}
+
 void blecon_led_data_activity() {
     k_mutex_lock(&blecon_led_mutex, K_FOREVER);
     _data_activity = true;
-    k_condvar_signal(&blecon_led_condvar);
+    if(_is_enabled) {
+        k_condvar_signal(&blecon_led_condvar);
+    }
     k_mutex_unlock(&blecon_led_mutex);
 }
 
 void blecon_led_set_connection_state(enum blecon_led_connection_state_t conn_state) {
     k_mutex_lock(&blecon_led_mutex, K_FOREVER);
     _connection_state = conn_state;
-    k_condvar_signal(&blecon_led_condvar);
+    if(_is_enabled) {
+        k_condvar_signal(&blecon_led_condvar);
+    }
     k_mutex_unlock(&blecon_led_mutex);
 }
 
 void blecon_led_set_announce(bool state) {
     k_mutex_lock(&blecon_led_mutex, K_FOREVER);
     _is_announcing = state;
-    k_condvar_signal(&blecon_led_condvar);
+    if(_is_enabled) {
+        k_condvar_signal(&blecon_led_condvar);
+    }
     k_mutex_unlock(&blecon_led_mutex);
 }
 
 void blecon_led_set_heartbeat(bool state) {
     k_mutex_lock(&blecon_led_mutex, K_FOREVER);
     _has_heartbeat = state;
-    k_condvar_signal(&blecon_led_condvar);
+    if(_is_enabled) {
+        k_condvar_signal(&blecon_led_condvar);
+    }
     k_mutex_unlock(&blecon_led_mutex);
 }

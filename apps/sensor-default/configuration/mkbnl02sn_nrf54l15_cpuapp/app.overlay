@@ -7,6 +7,10 @@
 	zephyr,user {
     	io-channels = <&adc 0>;
    	};
+	chosen {
+		blecon,led-sampling = &led1;
+		blecon,led-status = &led2;
+	};
 };
 
 // We don't use cpuflpr, so allocate all RRAM abd SRAM to cpuapp
