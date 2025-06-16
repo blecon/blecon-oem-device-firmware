@@ -1,0 +1,23 @@
+# Copyright (c) Blecon Ltd
+# SPDX-License-Identifier: Apache-2.0
+
+menu  "Blecon Sensor (Default)"
+DT_CHOSEN_BLECON_LED_SAMPLING := blecon,led-sampling
+config LED_SAMPLING
+    bool "Enable LED pattern on every sample"
+    default y if $(dt_chosen_enabled,$(DT_CHOSEN_BLECON_LED_SAMPLING))
+config SAMPLING_PERIOD_SEC
+    int "Sensors sampling period (seconds)"
+    default 60
+config REPORTING_PERIOD_SEC
+    int "Reporting period (seconds)"
+    default 300
+config LEDS_ENABLED_DURATION_MIN
+    int "How long shoud LEDs be enabled for after button press (minutes)"
+    default 720
+
+endmenu
+
+menu "Zephyr Kernel"
+source "Kconfig.zephyr"
+endmenu
