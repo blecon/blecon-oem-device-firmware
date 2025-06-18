@@ -15,7 +15,18 @@ config REPORTING_PERIOD_SEC
 config LEDS_ENABLED_DURATION_MIN
     int "How long shoud LEDs be enabled for after button press (minutes)"
     default 720
-
+config ALERT_TEMPERATURE_THRESHOLD_LOW
+    int "Temperature is too low if below this threshold"
+    default 15
+config ALERT_TEMPERATURE_THRESHOLD_HIGH
+    int "Temperature is too high if below this threshold"
+    default 30
+config ALERT_HUMIDITY_THRESHOLD_LOW
+    int "Humidity is too low if below this threshold"
+    default 30
+config ALERT_HUMIDITY_THRESHOLD_HIGH
+    int "Humidity is too high if below this threshold"
+    default 70
 endmenu
 
 menu "Zephyr Kernel"

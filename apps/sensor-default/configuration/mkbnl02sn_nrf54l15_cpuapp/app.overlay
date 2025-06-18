@@ -9,6 +9,7 @@
    	};
 	chosen {
 		blecon,led-sampling = &led1;
+		blecon,led-alert = &led0;
 		blecon,led-status = &led2;
 	};
 };

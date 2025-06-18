@@ -106,6 +106,10 @@ const static struct device *sht;
 #define LED_SAMPLING_NODE DT_CHOSEN(blecon_led_sampling)
 const static struct device *led_sampling = DEVICE_DT_GET(DT_PARENT(LED_SAMPLING_NODE));
 const static uint32_t led_sampling_idx = DT_NODE_CHILD_IDX(LED_SAMPLING_NODE);
+
+#define LED_ALERT_NODE DT_CHOSEN(blecon_led_alert)
+const static struct device *led_alert = DEVICE_DT_GET(DT_PARENT(LED_ALERT_NODE));
+const static uint32_t led_alert_idx = DT_NODE_CHILD_IDX(LED_ALERT_NODE);
 #endif
 
 // Function prototypes
@@ -529,6 +533,7 @@ void reboot(struct k_timer *timer) {
 #if CONFIG_LED_SAMPLING
 void sampling_led_timeout(struct k_timer *timer) {
     led_off(led_sampling, led_sampling_idx);
+    led_off(led_alert, led_alert_idx);
 }
 #endif
 
@@ -696,17 +701,12 @@ void update_metrics(void) {
 }
 
 static void temperature_logger_thread(void *d0, void *d1, void* d2) {
-    int ret;
-    uint32_t timestamp;
-    float temperature, humidity;
-
+    
     while(true) {
-        #if CONFIG_LED_SAMPLING
-        if(atomic_test_bit(&_leds_enabled, 0)) {
-            led_on(led_sampling, led_sampling_idx);
-            k_timer_start(&sampling_led_timer, K_MSEC(30), K_FOREVER);
-        }
-        #endif
+        int ret;
+        uint32_t timestamp;
+        float temperature, humidity;
+        bool alert = false;
         if (_time_set) {
             ret = read_temp_hum(&temperature, &humidity);
 
@@ -715,6 +715,15 @@ static void temperature_logger_thread(void *d0, void *d1, void* d2) {
                 continue;
             }
 
+            // Check if temperature or humidity are out of bounds
+            if( (temperature < CONFIG_ALERT_TEMPERATURE_THRESHOLD_LOW) 
+                || (temperature > CONFIG_ALERT_TEMPERATURE_THRESHOLD_HIGH)
+                || (humidity < CONFIG_ALERT_HUMIDITY_THRESHOLD_LOW)
+                || (humidity > CONFIG_ALERT_HUMIDITY_THRESHOLD_HIGH) ) {
+                alert = true;
+            }
+
+            // Log temperature and humidity
             struct temp_hum_update_event_t event_data = {0};
             timestamp = get_time();
             event_data.temperature = temperature;
@@ -729,6 +738,19 @@ static void temperature_logger_thread(void *d0, void *d1, void* d2) {
         else {
             _pre_uptime += CONFIG_SAMPLING_PERIOD_SEC;
         }
+
+        #if CONFIG_LED_SAMPLING
+        if(atomic_test_bit(&_leds_enabled, 0)) {
+            if(!alert) {
+                led_on(led_sampling, led_sampling_idx);
+                k_timer_start(&sampling_led_timer, K_MSEC(30), K_FOREVER);
+            } else {
+                led_on(led_alert, led_alert_idx);
+                k_timer_start(&sampling_led_timer, K_MSEC(5000), K_FOREVER);
+            }
+        }
+        #endif
+
         k_sleep(K_SECONDS(CONFIG_SAMPLING_PERIOD_SEC));
     }
 }
