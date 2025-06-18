@@ -8,7 +8,8 @@
     	io-channels = <&adc 0>;
    	};
 	chosen {
-		blecon,led-sampling = &led1;
+		blecon,led-sampling_1 = &led1;
+		blecon,led-sampling_2 = &led0;
 		blecon,led-status = &led2;
 	};
 };
