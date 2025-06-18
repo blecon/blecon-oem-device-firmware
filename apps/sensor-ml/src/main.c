@@ -77,6 +77,7 @@ static uint8_t _journal_array[BLECON_JOURNAL_SZ];
 const static size_t _journal_event_types_size[] = {sizeof(struct inference_event_t)};
 static struct blecon_journal_iterator_t _journal_iter;
 
+static atomic_t _leds_enabled = ATOMIC_INIT(0);
 static bool _time_set = false;
 static uint32_t _pre_uptime = 0;
 static uint32_t _epoch = 0;
@@ -153,20 +154,22 @@ const static struct blecon_callbacks_t blecon_callbacks = {
 };
 
 // Input and timer callbacks
-static void blecon_led_timeout(struct k_timer *timer);
+static void blecon_led_timeout(struct k_work *item);
 static void input_cb(struct input_event *evt, void* user_data);
 static void send_report(struct k_timer *timer);
 static void reboot(struct k_timer *timer);
 #if CONFIG_LED_GESTURE
 static void gesture_led_timeout(struct k_timer *timer);
 #endif
+static void disable_leds(struct k_work *work);
 
-K_TIMER_DEFINE(blecon_led_timer, blecon_led_timeout, NULL);
+static struct k_work_delayable _blecon_led_timeout_work_item;
 K_TIMER_DEFINE(report_timer, send_report, NULL);
 K_TIMER_DEFINE(reboot_timer, reboot, NULL);
 #if CONFIG_LED_GESTURE
 K_TIMER_DEFINE(gesture_led_timer, gesture_led_timeout, NULL);
 #endif
+K_WORK_DELAYABLE_DEFINE(led_enabled_work, disable_leds);
 
 INPUT_CALLBACK_DEFINE(NULL, input_cb, NULL);
 
@@ -454,7 +457,7 @@ void on_ping_result(struct blecon_t* blecon) {
     return;
 }
 
-void blecon_led_timeout(struct k_timer *timer) {
+void blecon_led_timeout(struct k_work *item) {
 #ifdef CONFIG_BLECON_LIB_LED
     blecon_led_set_announce(false);
 #else
@@ -501,6 +504,13 @@ void gesture_led_timeout(struct k_timer *timer) {
 }
 #endif
 
+void disable_leds(struct k_work *work) {
+    #ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_enable(false);
+    #endif
+    atomic_clear_bit(&_leds_enabled, 0);
+}
+
 void input_cb(struct input_event *evt, void* user_data)
 {
     switch (evt->code) {
@@ -515,23 +525,19 @@ void input_cb(struct input_event *evt, void* user_data)
 }
 
 void on_announce_button(struct blecon_event_t* event, void* user_data) {
+    // Enable LEDs for a while and start announcing
+    atomic_set_bit(&_leds_enabled, 0);
+    k_work_reschedule(&led_enabled_work, K_MINUTES(CONFIG_LEDS_ENABLED_DURATION_MIN));
 #ifdef CONFIG_BLECON_LIB_LED
+    blecon_led_enable(true);
     blecon_led_set_announce(true);
-#else
-    int ret;
-
-    ret = led_blink(led_pwm, 0, FAST_BLINK_PERIOD_MS/2U, FAST_BLINK_PERIOD_MS/2U);
-    if(ret < 0) {
-         LOG_ERR("blink error=%d", ret);
-        return;
-    }
 #endif
     if(!blecon_announce(&_blecon)) {
         LOG_ERR("Error: %s", "announce");
         return;
     }
 
-    k_timer_start(&blecon_led_timer, K_SECONDS(5), K_FOREVER);
+    k_work_schedule(&_blecon_led_timeout_work_item, K_SECONDS(5));
 }
 
 void on_start_connect(struct blecon_event_t* event, void* user_data) {
@@ -565,6 +571,9 @@ int main(void)
     // Register events that need to be run on the Blecon thread
     _start_announce_event = blecon_event_loop_register_event(_event_loop, on_announce_button, NULL);
     _start_connect_event = blecon_event_loop_register_event(_event_loop, on_start_connect, NULL);
+
+    // Initialise delayable work item for stopping the announce LEDAdd commentMore actions
+    k_work_init_delayable(&_blecon_led_timeout_work_item, blecon_led_timeout);
 
     // Init Blecon
     blecon_init(&_blecon, modem);
@@ -663,13 +672,15 @@ void inference_event(enum inference_category_t category, float score) {
 
     #if CONFIG_LED_GESTURE
     // Set brightness for the gesture LEDs and turn them on
-    for(size_t i = 0; i < LED_GESTURE_COUNT; i++) {
-        // led_set_brightness() will turn the LED on
-        led_set_brightness(led_gesture[i], led_gesture_idx[i], _gesture_led_brigtness_mappings[category][i]);
+    if(atomic_test_bit(&_leds_enabled, 0)) {
+        for(size_t i = 0; i < LED_GESTURE_COUNT; i++) {
+            // led_set_brightness() will turn the LED on
+            led_set_brightness(led_gesture[i], led_gesture_idx[i], _gesture_led_brigtness_mappings[category][i]);
+        }
+        
+        // The timer will be restarted if needed
+        k_timer_start(&gesture_led_timer, K_SECONDS(5), K_FOREVER);
     }
-      
-    // The timer will be restarted if needed
-    k_timer_start(&gesture_led_timer, K_SECONDS(5), K_FOREVER);
     #endif
 
     struct inference_event_t event_data = {0};
