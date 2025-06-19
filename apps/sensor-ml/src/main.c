@@ -603,7 +603,7 @@ int main(void)
 
      // Init request
     const static struct blecon_request_parameters_t request_params = {
-        .namespace = "sensor",
+        .namespace = "ml-sensor",
         .method = "log",
         .oneway = true,
         .request_content_type = "application/cbor",
