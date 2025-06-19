@@ -26,10 +26,21 @@ EXCLUDED_FILES="
 ./apps/sensor-memfault/sysbuild/mcuboot/prj.conf
 "
 
+EXCLUDED_DIRS="
+./apps/sensor-ml/src/motion-recognition/
+"
+
 for f in $FILES; do
     if echo "$EXCLUDED_FILES" | grep -q "$f"; then
         continue
     fi
+
+    # Check if the file is within any excluded directory
+    for excluded_dir in $EXCLUDED_DIRS; do
+        if [[ "$f" == "$excluded_dir"* ]]; then
+            continue 2
+        fi
+    done
 
     echo "Checking $f"
     # Check for SPDX license identifier
