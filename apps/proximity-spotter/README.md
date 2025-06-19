@@ -1,7 +1,15 @@
 # Beacon proximity application
 
-Application that retrieves a list of beacons within a cohort from the cloud and then indicates
-proximity to any beacon within the cohort through the LED.
+Application that displays the proximity from this device to the closest other Blecon device.
+
+This application works by repeatedly scanning for Blecon devices using the scanning API.
+When a Blecon device is detected, the application stores its identity and maps the RSSI
+of that device to the brightness of the green LED.
+
+If another Blecon device is detected with a higher RSSI, then the brightness reflects the new device.
+
+At the end of a scan, the closest detected device is logged and this information is reported
+with `log` messages using the `proximity-spotter` namespace.
 
 ## OTA Keys
 
