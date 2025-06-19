@@ -35,6 +35,9 @@ jobs:
           - app: sensor-default
             board: mkbnl02sn
             board_qualifiers: nrf54l15/cpuapp
+          - app: proximity-spotter
+            board: mkbnl02sn
+            board_qualifiers: nrf54l15/cpuapp
     steps:
       - name: Checkout
         uses: actions/checkout@v4

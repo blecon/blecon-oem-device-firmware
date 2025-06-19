@@ -1,0 +1,24 @@
+# Copyright (c) Blecon Ltd
+# SPDX-License-Identifier: Apache-2.0
+
+menu  "Blecon Proximity Spotter"
+DT_CHOSEN_BLECON_LED_PROXIMITY := blecon,led-proximity
+config LED_PROXIMITY
+    bool "Modulate LED brigtness based on closest neighbour"
+    default y if $(dt_chosen_enabled,$(DT_CHOSEN_BLECON_LED_PROXIMITY))
+config PROXIMITY_RSSI_THRESHOLD
+    int "Minimum RSSI threshold to log scanned device"
+    default -45
+config PROXIMITY_RSSI_MIN_BRIGHTNESS
+    depends on LED_PROXIMITY
+    int "RSSI corresponding to minimum brightness"
+    default PROXIMITY_RSSI_THRESHOLD
+config PROXIMITY_RSSI_MAX_BRIGHTNESS
+    depends on LED_PROXIMITY
+    int "RSSI corresponding to maximum brightness"
+    default -20
+endmenu
+
+menu "Zephyr Kernel"
+source "Kconfig.zephyr"
+endmenu
