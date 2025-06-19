@@ -64,9 +64,9 @@ struct inference_event_t { uint8_t gesture; } __attribute__((packed));
 static const char* _gesture_names[] = { "idle", "snake", "updown", "wave" };
 static const uint8_t _gesture_led_brigtness_mappings[][2] = {
     { 0, 0 }, // idle
-    { 0, 50 }, // snake
+    { 0, 0 }, // snake
     { 100, 0 }, // updown
-    { 50, 25 } // wave
+    { 0, 50 } // wave
 };
 
 // Journal
