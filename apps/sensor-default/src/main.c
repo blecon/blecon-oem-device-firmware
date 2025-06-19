@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <stdio.h>
+#include <math.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <blecon/blecon.h>
@@ -103,9 +104,10 @@ const static struct device *led_pwm;
 const static struct device *sht;
 #if CONFIG_LED_SAMPLING
 // TODO replace with struct led_dt_spec once Zephyr is updated
-#define LED_SAMPLING_NODE DT_CHOSEN(blecon_led_sampling)
-const static struct device *led_sampling = DEVICE_DT_GET(DT_PARENT(LED_SAMPLING_NODE));
-const static uint32_t led_sampling_idx = DT_NODE_CHILD_IDX(LED_SAMPLING_NODE);
+#define LED_SAMPLING_1_NODE DT_CHOSEN(blecon_led_sampling_1)
+#define LED_SAMPLING_2_NODE DT_CHOSEN(blecon_led_sampling_2)
+const static struct device* led_sampling[] = { DEVICE_DT_GET(DT_PARENT(LED_SAMPLING_1_NODE)), DEVICE_DT_GET(DT_PARENT(LED_SAMPLING_2_NODE)) };
+const static uint32_t led_sampling_idx[] = { DT_NODE_CHILD_IDX(LED_SAMPLING_1_NODE), DT_NODE_CHILD_IDX(LED_SAMPLING_2_NODE) };
 #endif
 
 // Function prototypes
@@ -528,7 +530,9 @@ void reboot(struct k_timer *timer) {
 
 #if CONFIG_LED_SAMPLING
 void sampling_led_timeout(struct k_timer *timer) {
-    led_off(led_sampling, led_sampling_idx);
+    for(size_t led_num = 0; led_num < ARRAY_SIZE(led_sampling); led_num++) {
+        led_off(led_sampling[led_num], led_sampling_idx[led_num]);
+    }
 }
 #endif
 
@@ -696,39 +700,50 @@ void update_metrics(void) {
 }
 
 static void temperature_logger_thread(void *d0, void *d1, void* d2) {
-    int ret;
-    uint32_t timestamp;
-    float temperature, humidity;
 
+    float last_temperature = 0.0f;
+    
     while(true) {
-        #if CONFIG_LED_SAMPLING
-        if(atomic_test_bit(&_leds_enabled, 0)) {
-            led_on(led_sampling, led_sampling_idx);
-            k_timer_start(&sampling_led_timer, K_MSEC(30), K_FOREVER);
+        uint32_t timestamp = 0;
+        float temperature = 0.0f;
+        float humidity = 0.0f;
+        int ret = read_temp_hum(&temperature, &humidity);
+        
+        if (ret < 0) {
+            LOG_ERR("Error: %s", "Could not read temperature/humidity");
+            continue;
         }
-        #endif
         if (_time_set) {
-            ret = read_temp_hum(&temperature, &humidity);
-
-            if (ret < 0) {
-                LOG_ERR("Error: %s", "Could not read temperature/humidity");
-                continue;
-            }
-
+            // Log temperature and humidity
             struct temp_hum_update_event_t event_data = {0};
             timestamp = get_time();
             event_data.temperature = temperature;
             event_data.humidity = humidity;
-
+            
             k_mutex_lock(&journal_mutex, K_FOREVER);
             blecon_journal_push(&_journal, timestamp, EVENT_TYPE_TEMP_HUM_UPDATE, &event_data);
             k_mutex_unlock(&journal_mutex);
-
+            
             LOG_DBG("writing to journal (%u)", timestamp);
         }
         else {
             _pre_uptime += CONFIG_SAMPLING_PERIOD_SEC;
         }
+        
+        #if CONFIG_LED_SAMPLING
+        if(atomic_test_bit(&_leds_enabled, 0)) {
+            if( fabsf(temperature - last_temperature) > 0.05f ) {
+                // Display temperature change direction with LEDs
+                size_t sampling_led_num = (temperature < last_temperature) ? 0 : 1;
+                const struct device* led = led_sampling[sampling_led_num];
+                size_t led_idx = led_sampling_idx[sampling_led_num];
+                led_on(led, led_idx);
+                k_timer_start(&sampling_led_timer, K_MSEC(2000), K_FOREVER);
+            }
+        }
+        #endif
+        last_temperature = temperature;
+        
         k_sleep(K_SECONDS(CONFIG_SAMPLING_PERIOD_SEC));
     }
 }
