@@ -1,5 +1,10 @@
 # Copyright (c) Blecon Ltd
 # SPDX-License-Identifier: Apache-2.0
+
+# Workaround for not being able to have commas in macro arguments
+DT_CHOSEN_BLECON_LED_STATUS := blecon,led-status
+DT_CHOSEN_BLECON_SW_POWER := blecon,sw-power
+
 config BLECON_LIB_BATTERY
     bool "Battery driver"
     default n
@@ -12,6 +17,12 @@ config BLECON_LIB_MOTION
 config BLECON_LIB_LED
     bool "Status LED module"
     default y if $(dt_chosen_enabled,$(DT_CHOSEN_BLECON_LED_STATUS))
+config BLECON_LIB_POWER_SW
+    select PM_DEVICE
+    select POWEROFF
+    select HWINFO
+    bool "Power switch module"
+    default y if $(dt_chosen_enabled,$(DT_CHOSEN_BLECON_SW_POWER))
 config BLECON_APP_VERSION
     string "Blecon App version (semver)"
     default "0.0.0"
