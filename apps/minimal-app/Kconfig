@@ -1,0 +1,6 @@
+# Copyright (c) Blecon Ltd
+# SPDX-License-Identifier: Apache-2.0
+
+menu "Zephyr Kernel"
+source "Kconfig.zephyr"
+endmenu
