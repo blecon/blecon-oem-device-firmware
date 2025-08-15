@@ -32,25 +32,18 @@ void power_off() {
     const struct device *const cons = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
 
     ret = gpio_pin_configure_dt(&sw, GPIO_INPUT);
-    if (ret < 0) {
-        printf("Could not configure wakeup GPIO (%d)\n", ret);
-        return;
-    }
+    __ASSERT(ret == 0, "Could not configure wakeup GPIO (%d)\n", ret);
+
 
     ret = gpio_pin_interrupt_configure_dt(&sw, GPIO_INT_LEVEL_ACTIVE);
-    if (ret < 0) {
-        printf("Could not configure sw0 GPIO interrupt (%d)\n", ret);
-        return;
-    }
+    __ASSERT(ret == 0, "Could not configure wakeup GPIO interrupt (%d)\n", ret);
 
-    printf("Entering system off; press power button to restart\n");
+
+    printf("Entering system off; press wakeup button to restart\n");
 
     if (cons != NULL) {
         ret = pm_device_action_run(cons, PM_DEVICE_ACTION_SUSPEND);
-        if (ret < 0) {
-            printf("Could not suspend console (%d)\n", ret);
-            return;
-        }
+        __ASSERT(ret == 0, "Could not suspend the console (%d)\n", ret);
     }
 
     hwinfo_clear_reset_cause();
