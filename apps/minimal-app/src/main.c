@@ -20,19 +20,16 @@
 #include <memfault/metrics/metrics.h>
 #include <memfault/components.h>
 
-#include "battery/battery.h"
 #include <blecon/blecon_buffer.h>
-#include <blecon/blecon_journal.h>
 #include <blecon/blecon_util.h>
 
+#include "battery/battery.h"
 #include "ota/ota.h"
+#include "power_switch/power_switch.h"
 #include "blecon_zephyr/blecon_zephyr.h"
 #include "blecon_zephyr/blecon_zephyr_event_loop.h"
 #include "blecon_zephyr/blecon_zephyr_memfault.h"
 #include "blecon/blecon_memfault_client.h"
-
-#include <zephyr/drivers/hwinfo.h>
-#include "power_switch/power_switch.h"
 
 /*
 We make pulling in the LED blinking/status library
@@ -46,27 +43,10 @@ optional since nRF52833 targets are memory-limited
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 
-#define MOTION_ACC_THRESHOLD 4.0    // Acceleration threshold to register a motion event (in m/s^2)
-
 #define REPORT_PERIOD_SEC 300
 #define REBOOT_PERIOD_SEC 4500    // How frequently to reboot
 
-#define BLECON_JOURNAL_SZ               4096
-#define BLECON_JOURNAL_WATERMARK_SZ     8 // Very low watermark (at least one event)
-
 #define MAX_CONCURRENT_SEND_OPS 2
-
-// Events and structures
-#define EVENT_TYPE_PROXIMITY        0
-struct proximity_event_t { uint8_t device_id[BLECON_UUID_SZ]; int8_t rssi; } __attribute__((packed));
-
-// Journal
-K_MUTEX_DEFINE(journal_mutex);
-static uint32_t _id_after_last_sent = 0;
-static struct blecon_journal_t _journal;
-static uint8_t _journal_array[BLECON_JOURNAL_SZ];
-const static size_t _journal_event_types_size[] = {16 + 1};
-static struct blecon_journal_iterator_t _journal_iter;
 
 static bool _time_set = false;
 static uint32_t _pre_uptime = 0;
@@ -87,12 +67,11 @@ struct send_op_t {
 };
 static struct send_op_t _send_ops[MAX_CONCURRENT_SEND_OPS] = {0};
 
-static bool _cbor_header_sent = false;
 static zcbor_state_t _cbor_state[3] = {0};
+static bool _should_send_data = false;
 static bool _send_finished = false;
 
 static struct blecon_event_t* _start_announce_event = NULL;
-static struct blecon_event_t* _start_scan_event = NULL;
 static struct blecon_event_t* _start_connect_event = NULL;
 
 const static struct device *led_pwm;
@@ -100,7 +79,7 @@ const static struct device *led_pwm;
 // Function prototypes
 static uint32_t get_time(void);
 static void send_data(void);
-static void submit_request_or_disconnect(bool first_request);
+static void submit_request();
 static void update_metrics(void);
 
 // Requests callbacks
@@ -168,7 +147,6 @@ static void flash_power_led(uint32_t blinks)
 
 // Blecon activity triggers
 static void on_announce_button(struct blecon_event_t* event, void* user_data);
-static void on_start_scan(struct blecon_event_t* event, void* user_data);
 static void on_start_connect(struct blecon_event_t* event, void* user_data);
 
 uint32_t get_time(void) {
@@ -197,114 +175,31 @@ void send_data(void) {
         size_t buffer_sz = sizeof(send_op->buffer);
 
         bool b = true;
-        if(!_cbor_header_sent) {
-            zcbor_new_encode_state(_cbor_state, sizeof(_cbor_state) / sizeof(zcbor_state_t), buffer, buffer_sz, 1);
 
-            // Open map
-            b &= zcbor_map_start_encode(_cbor_state, 3);
+        zcbor_new_encode_state(_cbor_state, sizeof(_cbor_state) / sizeof(zcbor_state_t), buffer, buffer_sz, 1);
 
-            // Uptime
-            b &= zcbor_tstr_put_lit(_cbor_state, "uptime");
-            b &= zcbor_uint32_put(_cbor_state, get_time() - _epoch);
+        // Open map
+        b &= zcbor_map_start_encode(_cbor_state, 3);
 
-            // Battery level
-            b &= zcbor_tstr_put_lit(_cbor_state, "battery");
+        // Uptime
+        b &= zcbor_tstr_put_lit(_cbor_state, "uptime");
+        b &= zcbor_uint32_put(_cbor_state, get_time() - _epoch);
 
-            int batt_mv = battery_sample();
-		    if (batt_mv < 0) {
-                LOG_ERR("Failed to read battery voltage: %d", batt_mv);
-                batt_mv = 0;
-    		}
-            b &= zcbor_uint32_put(_cbor_state, batt_mv);
+        // Battery level
+        b &= zcbor_tstr_put_lit(_cbor_state, "battery");
 
-            // Events
-            b &= zcbor_tstr_put_lit(_cbor_state, "events");
-            b &= zcbor_list_start_encode(_cbor_state, 0);
-            _cbor_header_sent = true;
-        } else {
-            zcbor_update_state(_cbor_state, buffer, buffer_sz);
+        int batt_mv = battery_sample();
+        if (batt_mv < 0) {
+            LOG_ERR("Failed to read battery voltage: %d", batt_mv);
+            batt_mv = 0;
         }
+        b &= zcbor_uint32_put(_cbor_state, batt_mv);
 
-        k_mutex_lock(&journal_mutex, K_FOREVER);
-        // Check if the journal has wrapped since we last used this iterator
-        // If so, discard old iterator and start over from the new one.
-        struct blecon_journal_iterator_t start_iter = blecon_journal_begin(&_journal);
-        if(_journal_iter.read_event_id < start_iter.read_event_id) {
-            _journal_iter = start_iter;
-        }
+        // Close map
+        b &= zcbor_map_end_encode(_cbor_state, 3);
 
-        while(
-            (_cbor_state->payload - send_op->buffer < 256 /* should be plenty of space for a very large event*/)
-            && _journal_iter.valid ) {
-            // Extract metadata
-            blecon_journal_event_type_t event_type;
-            uint32_t id;
-            uint32_t timestamp;
-            size_t event_size;
-            blecon_journal_get_metadata(&_journal_iter, &id, &timestamp, &event_type, &event_size);
-
-            // Open map
-            b &= zcbor_map_start_encode(_cbor_state, 5 /* id + time + type + humidity + temperature */);
-
-            // ID
-            b &= zcbor_tstr_put_lit(_cbor_state, "id");
-            b &= zcbor_int32_put(_cbor_state, id);
-
-            // Time
-            b &= zcbor_tstr_put_lit(_cbor_state, "time");
-            b &= zcbor_tag_put(_cbor_state, 1 /* Epoch-based date/time as defined in RC7049 */);
-            b &= zcbor_uint32_put(_cbor_state, timestamp);
-
-            b &= zcbor_tstr_put_lit(_cbor_state, "type");
-
-            switch(event_type) {
-                case EVENT_TYPE_PROXIMITY: {
-                    blecon_assert(event_size == sizeof(struct proximity_event_t));
-                    b &= zcbor_tstr_put_lit(_cbor_state, "proximity");
-
-                    struct proximity_event_t prox_event = {0};
-                    blecon_journal_get_event(&_journal_iter, &prox_event);
-
-                    char uuid_str[BLECON_UUID_STR_SZ] = {0};
-                    blecon_util_append_uuid_string(prox_event.device_id, uuid_str);
-
-                    b &= zcbor_tstr_put_lit(_cbor_state, "spotted_id");
-                    b &= zcbor_tstr_put_term(_cbor_state, uuid_str, BLECON_UUID_STR_SZ-1);
-
-                    b &= zcbor_tstr_put_lit(_cbor_state, "rssi");
-                    b &= zcbor_int_encode(_cbor_state, &prox_event.rssi, sizeof(prox_event.rssi));
-                    break;
-                }
-                default:
-                    blecon_fatal_error();
-            }
-
-            // Close map
-            b &= zcbor_map_end_encode(_cbor_state, 5);
-
-            // Move to next event
-            _journal_iter = blecon_journal_next(&_journal_iter);
-        }
-        k_mutex_unlock(&journal_mutex);
-
-        // If journal is empty, mark sending as finished
-        // (bearing in mind that more data can be pushed into the journal
-        // before the request has been sent)
-        if(!_journal_iter.valid) {
-            // Close array
-            b &= zcbor_list_end_encode(_cbor_state, 0);
-
-            // Close map
-            b &= zcbor_map_end_encode(_cbor_state, 3);
-
-            // Mark as finished
-            _send_finished = true;
-
-            // Update last sent id
-            _id_after_last_sent = _journal_iter.read_event_id;
-
-            LOG_DBG("%s", "journal is now empty!");
-        }
+        // Mark as finished
+        _send_finished = true;
 
         // Really, nothing should have gone wrong with encoding
         blecon_assert(b);
@@ -325,18 +220,12 @@ void send_data(void) {
     }
 }
 
-void submit_request_or_disconnect(bool first_request) {
-    if(blecon_journal_is_empty(&_journal) && !first_request) { // If nothing to send, abort unless it's first request
-        blecon_connection_terminate(&_blecon); // Nothing left to send/receive
-        return;
-    }
-
+void submit_request() {
     // Reset request data
     for(size_t p = 0; p < MAX_CONCURRENT_SEND_OPS; p++) {
         _send_ops[p].busy = false;
     }
 
-    _cbor_header_sent = false;
     _send_finished = false;
 
     // Clean-up request
@@ -344,11 +233,6 @@ void submit_request_or_disconnect(bool first_request) {
 
     // Queue initial ops
     // Start writing events
-
-    k_mutex_lock(&journal_mutex, K_FOREVER);
-    _journal_iter = blecon_journal_begin(&_journal);
-    k_mutex_unlock(&journal_mutex);
-
     send_data();
 
     // Create receive data operation
@@ -371,21 +255,8 @@ void request_on_closed(struct blecon_request_t* request) {
         blecon_connection_terminate(&_blecon);
         return;
     }
-
-    // Erase all sent ids
-    k_mutex_lock(&journal_mutex, K_FOREVER);
-    struct blecon_journal_iterator_t iterator = blecon_journal_begin(&_journal);
-
-    // Erase all successfully sent messages
-    while(iterator.valid
-        && (iterator.read_event_id < _id_after_last_sent)) {
-        iterator = blecon_journal_next(&iterator);
-    }
-    blecon_journal_erase_until(&iterator);
-    k_mutex_unlock(&journal_mutex);
-
-    // Send next request or disconnect
-    submit_request_or_disconnect(false);
+    // Shutdown the connection
+    blecon_connection_terminate(&_blecon);
 }
 
 void request_on_data_sent(struct blecon_request_send_data_op_t* send_data_op, bool data_sent) {
@@ -419,7 +290,12 @@ void on_connection(struct blecon_t* blecon) {
         blecon_connection_terminate(&_blecon);
         return; // Can't send anything yet
     }
-    submit_request_or_disconnect(true);
+
+    // Rate limited by report period so that we don't send data every connection
+    if(_should_send_data) {
+        submit_request();
+        _should_send_data = false;
+    }
 }
 
 void on_disconnection(struct blecon_t* blecon) {
@@ -470,10 +346,8 @@ void input_cb(struct input_event *evt, void* user_data)
         break;
     case INPUT_KEY_X:
         if(evt->value == 1) {
-            #ifdef CONFIG_BLECON_LIB_POWER_SW
             flash_power_led(3);
             power_off();
-            #endif
         }
         break;
     default:
@@ -504,21 +378,17 @@ void on_announce_button(struct blecon_event_t* event, void* user_data) {
 
 void on_start_connect(struct blecon_event_t* event, void* user_data) {
     LOG_DBG("%s", "Starting connection");
+    _should_send_data = true;
+
     if(!blecon_connection_initiate(&_blecon)) {
         LOG_ERR("Error: %s", "could not initiate connection.");
     }
 }
 
-void on_start_scan(struct blecon_event_t* event, void* user_data) {
-   return;
-}
-
 int main(void)
 {
-    #ifdef CONFIG_BLECON_LIB_POWER_SW
     power_sys_start();
     flash_power_led(1);
-    #endif
 
     k_timer_start(&reboot_timer, K_SECONDS(REBOOT_PERIOD_SEC), K_FOREVER);
 
@@ -536,7 +406,6 @@ int main(void)
 
     // Register events that need to be run on the Blecon thread
     _start_announce_event = blecon_event_loop_register_event(_event_loop, on_announce_button, NULL);
-    _start_scan_event = blecon_event_loop_register_event(_event_loop, on_start_scan, NULL);
     _start_connect_event = blecon_event_loop_register_event(_event_loop, on_start_connect, NULL);
 
     // Registered scheduled work item
@@ -567,7 +436,7 @@ int main(void)
 
      // Init request
     const static struct blecon_request_parameters_t request_params = {
-        .namespace = "proximity-spotter",
+        .namespace = "minimal-app",
         .method = "log",
         .oneway = true,
         .request_content_type = "application/cbor",
@@ -585,8 +454,6 @@ int main(void)
         return 1;
     }
     LOG_INF("Device URL: %s", blecon_url);
-
-    blecon_journal_init(&_journal, _journal_array, sizeof(_journal_array), _journal_event_types_size, sizeof(_journal_event_types_size) / sizeof(uint32_t));
 
     k_timer_start(&report_timer, K_SECONDS(REPORT_PERIOD_SEC), K_SECONDS(REPORT_PERIOD_SEC));
 
