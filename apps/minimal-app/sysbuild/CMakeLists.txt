@@ -8,7 +8,7 @@ set(SB_APPLICATION_CONFIG_DIR "${CMAKE_CURRENT_LIST_DIR}/../configuration/\${NOR
 # `CMakeLists.txt` file (this allows to avoid dependency on main application name).
 # Redirect other images' configuration directories to redefine configuration.
 set(mcuboot_APPLICATION_CONFIG_DIR
-    "${CMAKE_CURRENT_LIST_DIR}/../configuration/\${NORMALIZED_BOARD_TARGET}/images/mcuboot"
+    "${CMAKE_CURRENT_LIST_DIR}/../../../common/configuration/\${NORMALIZED_BOARD_TARGET}/images/mcuboot"
     CACHE INTERNAL "Application configuration dir controlled by sysbuild"
 )
 
