@@ -17,35 +17,27 @@ void power_sys_start() {
     uint32_t reset_cause;
 
     ret = hwinfo_get_reset_cause(&reset_cause);
-    if (ret == 0) {
-        printf("Reset cause: %u\n", reset_cause);
-        if (reset_cause & RESET_POR || reset_cause & RESET_PIN) {
-            power_off();
-        }
+    __ASSERT(ret == 0, "Could not get reset reason (%d)\n", ret);
+
+    printf("Reset cause: %u\n", reset_cause);
+    if (reset_cause & RESET_POR || reset_cause & RESET_PIN) {
+        power_off();
     }
-    return;
 }
 
 void power_off() {
     int ret;
 
-    const struct device *const cons = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
-
-    ret = gpio_pin_configure_dt(&sw, GPIO_INPUT);
+    ret = gpio_pin_configure_dt(&sw, (GPIO_PULL_UP | GPIO_INPUT));
     __ASSERT(ret == 0, "Could not configure wakeup GPIO (%d)\n", ret);
 
 
     ret = gpio_pin_interrupt_configure_dt(&sw, GPIO_INT_LEVEL_ACTIVE);
     __ASSERT(ret == 0, "Could not configure wakeup GPIO interrupt (%d)\n", ret);
 
-
-    printf("Entering system off; press wakeup button to restart\n");
-
-    if (cons != NULL) {
-        ret = pm_device_action_run(cons, PM_DEVICE_ACTION_SUSPEND);
-        __ASSERT(ret == 0, "Could not suspend the console (%d)\n", ret);
-    }
-
     hwinfo_clear_reset_cause();
+
+    // TODO: Figure out why this delay is needed for certain hardware
+    k_sleep(K_MSEC(1));
     sys_poweroff();
 }
