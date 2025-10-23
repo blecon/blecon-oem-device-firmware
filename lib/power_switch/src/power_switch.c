@@ -19,8 +19,9 @@ void power_sys_start() {
     ret = hwinfo_get_reset_cause(&reset_cause);
     __ASSERT(ret == 0, "Could not get reset reason (%d)\n", ret);
 
-    printf("Reset cause: %u\n", reset_cause);
-    if (reset_cause & RESET_POR || reset_cause & RESET_PIN) {
+    printk("Reset cause: %u\n", reset_cause);
+
+    if (reset_cause & RESET_POR || reset_cause & RESET_PIN || reset_cause == 0) {
         power_off();
     }
 }

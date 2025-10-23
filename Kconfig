@@ -19,6 +19,7 @@ config BLECON_LIB_LED
     default y if $(dt_chosen_enabled,$(DT_CHOSEN_BLECON_LED_STATUS))
 config BLECON_LIB_POWER_SW
     select PM_DEVICE
+    select PM_DEVICE_RUNTIME
     select POWEROFF
     select HWINFO
     bool "Power switch module"
