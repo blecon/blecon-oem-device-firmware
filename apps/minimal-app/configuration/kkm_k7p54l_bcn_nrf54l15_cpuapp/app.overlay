@@ -55,3 +55,7 @@
 &uart21 {
 	status = "disabled";
 };
+
+&fm25w16 {
+	zephyr,pm-device-runtime-auto;
+};

@@ -12,6 +12,7 @@
 #include <zcbor_common.h>
 #include <zcbor_encode.h>
 
+#include <zephyr/pm/device_runtime.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/dfu/flash_img.h>
@@ -37,6 +38,8 @@ optional since nRF52833 targets are memory-limited
 */
 #ifdef CONFIG_BLECON_LIB_LED
 #include "led/blecon_led.h"
+#else
+const static struct device *led_pwm;
 #endif
 
 #define MEMFAULT_REQUEST_NAMESPACE "memfault"
@@ -73,8 +76,6 @@ static bool _send_finished = false;
 
 static struct blecon_event_t* _start_announce_event = NULL;
 static struct blecon_event_t* _start_connect_event = NULL;
-
-const static struct device *led_pwm;
 
 // Function prototypes
 static uint32_t get_time(void);
@@ -387,16 +388,26 @@ void on_start_connect(struct blecon_event_t* event, void* user_data) {
 
 int main(void)
 {
+    int ret;
+
+    // Put gpio-keys into active state to be able to receive keypresses
+    ret = pm_device_runtime_get(DEVICE_DT_GET(DT_PATH(buttons)));
+    if (ret < 0) {
+        LOG_ERR("pm_device_runtime_get for buttons failed: %d", ret);
+    }
+
     power_sys_start();
     flash_power_led(1);
 
     k_timer_start(&reboot_timer, K_SECONDS(REBOOT_PERIOD_SEC), K_FOREVER);
 
+    #ifndef CONFIG_BLECON_LIB_LED
     led_pwm = DEVICE_DT_GET(DT_PATH(pwmleds));
     if (!device_is_ready(led_pwm)) {
         LOG_ERR("Device %s is not ready\n", led_pwm->name);
         return 0;
     }
+    #endif
 
     // Get event loop
     _event_loop = blecon_zephyr_get_event_loop();
