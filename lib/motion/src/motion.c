@@ -33,10 +33,9 @@ static int blecon_motion_set_sampling_freq(const struct device *dev, int32_t sam
 static void blecon_motion_on_stop(struct k_work *);
 static void motion_trigger_handler(const struct device *dev, const struct sensor_trigger *trig);
 
-int init_motion(float accel_threshold, const struct blecon_motion_event_callbacks_t* callbacks) {
+int init_motion(const struct device *accel, float accel_threshold, const struct blecon_motion_event_callbacks_t* callbacks) {
 	int ret;
 
-    const struct device *accel = DEVICE_DT_GET_ANY(st_lis2dh);
 	if (!device_is_ready(accel)) {
 		LOG_ERR("Device %s is not ready.", accel->name);
 		return 0;
@@ -168,21 +167,17 @@ void blecon_motion_on_stop(struct k_work *item) {
 
 int blecon_motion_set_sampling_freq(const struct device *dev, int32_t sampling_freq) {
     int ret;
+    struct sensor_value odr = {
+        .val1 = sampling_freq,
+    };
 
-    if (IS_ENABLED(CONFIG_LIS2DH_ODR_RUNTIME)) {
-        struct sensor_value odr = {
-            .val1 = sampling_freq,
-        };
-
-        ret = sensor_attr_set(dev, SENSOR_CHAN_ACCEL_XYZ,
-                        SENSOR_ATTR_SAMPLING_FREQUENCY,
-                        &odr);
-        if (ret != 0) {
-            LOG_ERR("Failed to set odr: %d", ret);
-            return 0;
-        }
-        LOG_DBG("Sampling at %u Hz\n", odr.val1);
+    ret = sensor_attr_set(dev, SENSOR_CHAN_ACCEL_XYZ,
+                    SENSOR_ATTR_SAMPLING_FREQUENCY,
+                    &odr);
+    if (ret != 0) {
+        LOG_ERR("Failed to set odr: %d", ret);
     }
+    LOG_DBG("Sampling at %u Hz\n", odr.val1);
 
-    return 0;
+    return ret;
 }
