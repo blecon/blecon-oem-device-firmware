@@ -127,25 +127,6 @@ K_TIMER_DEFINE(reboot_timer, reboot, NULL);
 
 INPUT_CALLBACK_DEFINE(NULL, input_cb, NULL);
 
-// Power on/off indicator
-#define POWER_BLINK_PERIOD_MS   200
-// TODO replace with struct led_dt_spec once Zephyr is updated
-#define LED_POWER_NODE DT_CHOSEN(blecon_led_power)
-const static struct device *led_power = DEVICE_DT_GET(DT_PARENT(LED_POWER_NODE));
-const static uint32_t led_power_idx = DT_NODE_CHILD_IDX(LED_POWER_NODE);
-
-static void flash_power_led(uint32_t blinks)
-{
-    for (uint32_t i = 0; i < blinks; i++){
-        if (i != 0) {
-            k_sleep(K_MSEC(POWER_BLINK_PERIOD_MS));
-        }
-        led_on(led_power, led_power_idx);
-        k_sleep(K_MSEC(POWER_BLINK_PERIOD_MS));
-        led_off(led_power, led_power_idx);
-    }
-}
-
 // Blecon activity triggers
 static void on_announce_button(struct blecon_event_t* event, void* user_data);
 static void on_start_connect(struct blecon_event_t* event, void* user_data);
@@ -347,7 +328,7 @@ void input_cb(struct input_event *evt, void* user_data)
         break;
     case INPUT_KEY_X:
         if(evt->value == 1) {
-            flash_power_led(3);
+            power_flash_led(3);
             power_off();
         }
         break;
@@ -397,7 +378,7 @@ int main(void)
     }
 
     power_sys_start();
-    flash_power_led(1);
+    power_flash_led(1);
 
     k_timer_start(&reboot_timer, K_SECONDS(REBOOT_PERIOD_SEC), K_FOREVER);
 
