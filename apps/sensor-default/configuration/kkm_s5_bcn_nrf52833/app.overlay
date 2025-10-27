@@ -10,4 +10,7 @@
 	chosen {
 		blecon,led-status = &pwm_led0;
 	};
+	aliases {
+		accel0 = &lis3dh;
+	}
 };
