@@ -104,6 +104,8 @@ static struct blecon_event_t* _start_connect_event = NULL;
 
 const static struct device *led_pwm;
 const static struct device *sht = DEVICE_DT_GET_ANY(sensirion_sht4x);
+const static struct device *accel = DEVICE_DT_GET(DT_ALIAS(accel0));
+
 #if CONFIG_LED_SAMPLING
 // TODO replace with struct led_dt_spec once Zephyr is updated
 #define LED_SAMPLING_1_NODE DT_CHOSEN(blecon_led_sampling_1)
@@ -539,6 +541,19 @@ void sampling_led_timeout(struct k_timer *timer) {
 }
 #endif
 
+void sensor_powerdown() {
+    int ret;
+    // Power down accelerometer
+    struct sensor_value odr = {0};
+    ret = sensor_attr_set(accel, SENSOR_CHAN_ACCEL_XYZ,
+                    SENSOR_ATTR_SAMPLING_FREQUENCY,
+                    &odr);
+
+    if (ret != 0) {
+        LOG_ERR("Failed to power down accelerometer: %d", ret);
+    }
+}
+
 void disable_leds(struct k_work *work) {
     #ifdef CONFIG_BLECON_LIB_LED
     blecon_led_enable(false);
@@ -557,6 +572,7 @@ void input_cb(struct input_event *evt, void* user_data)
     case INPUT_KEY_X:
         if(evt->value == 1) {
             power_flash_led(3);
+            sensor_powerdown();
             power_off();
         }
         break;
@@ -609,6 +625,7 @@ int main(void)
         LOG_ERR("pm_device_runtime_get for buttons failed: %d", ret);
     }
 
+    sensor_powerdown();
     power_sys_start();
     power_flash_led(1);
 
@@ -617,7 +634,7 @@ int main(void)
 		return 0;
 	}
 
-    ret = init_motion(MOTION_ACC_THRESHOLD, &motion_event_callbacks);
+    ret = init_motion(accel, MOTION_ACC_THRESHOLD, &motion_event_callbacks);
     if (ret) {
         LOG_ERR("Could not initialize accelerometer: %d", ret);
     }
@@ -665,6 +682,12 @@ int main(void)
 
     // Init OTA module
     ota_init(_event_loop, &_blecon, MEMFAULT_REQUEST_NAMESPACE);
+
+    // Set initial advertising mode
+    if(!blecon_set_advertising_mode(&_blecon, blecon_advertising_mode_balanced)) {
+        printk("Failed to set advertising mode\r\n");
+        return 1;
+    }
 
      // Init request
     const static struct blecon_request_parameters_t request_params = {
