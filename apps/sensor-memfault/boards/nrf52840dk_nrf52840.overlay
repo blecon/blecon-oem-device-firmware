@@ -11,6 +11,9 @@
     zephyr,user {
 		io-channels = <&adc 4>;
 	};
+    aliases {
+		accel0 = &lis3dh;
+	};
 };
 
 &i2c0 {

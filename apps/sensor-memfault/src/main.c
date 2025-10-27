@@ -54,7 +54,8 @@ static struct blecon_event_t* _ota_check_event = NULL;
 static struct blecon_event_t* _connected_event = NULL;
 
 const static struct device *led_pwm;
-const static struct device *sht;
+const static struct device *sht = DEVICE_DT_GET_ANY(sensirion_sht4x);
+const static struct device *accel = DEVICE_DT_GET(DT_ALIAS(accel0));
 
 // Function prototypes
 static uint32_t get_time(void);
@@ -236,21 +237,20 @@ int main(void)
 {
     int ret;
 
-    sht = DEVICE_DT_GET_ANY(sensirion_sht4x);
 	if (!device_is_ready(sht)) {
 		LOG_ERR("Device %s is not ready.", sht->name);
 		return 0;
 	}
-   
+
     _motion_count = 0;
-    ret = init_motion(MOTION_ACC_THRESHOLD, &motion_event_callbacks);
+    ret = init_motion(accel, MOTION_ACC_THRESHOLD, &motion_event_callbacks);
     if (ret) {
         LOG_ERR("Could not initialize acclerometer: %d", ret);
     }
 
     k_timer_start(&reboot_timer, K_SECONDS(REBOOT_PERIOD_SEC), K_FOREVER);
 
-    #if CONFIG_MEMFAULT_DEMO_GESTURE_DETECT 
+    #if CONFIG_MEMFAULT_DEMO_GESTURE_DETECT
         gesture_detection_callback = on_gesture_detected;
     #endif
 
@@ -329,7 +329,7 @@ void update_metrics(void) {
         LOG_ERR("Error: could not read temperature/humidity");
         return;
     }
-    
+
     MEMFAULT_METRIC_SET_UNSIGNED(motion_count, (_motion_count));
     MEMFAULT_METRIC_SET_UNSIGNED(gesture_count, (_gesture_count));
     MEMFAULT_METRIC_SET_UNSIGNED(humidity, (uint32_t) (humidity * 1000));
@@ -353,7 +353,7 @@ static void motion_stop_event(void) {
     LOG_DBG("Motion stop");
 }
 
-static void motion_vector_event(float x, float y, float z) {    
+static void motion_vector_event(float x, float y, float z) {
     LOG_DBG("Motion vector: %f %f %f", (double) x, (double) y, (double) z);
     gesture_detection_callback();
 }
