@@ -426,6 +426,12 @@ int main(void)
     // Init OTA module
     ota_init(_event_loop, &_blecon, MEMFAULT_REQUEST_NAMESPACE);
 
+    // Set initial advertising mode
+    if(!blecon_set_advertising_mode(&_blecon, blecon_advertising_mode_balanced)) {
+        printk("Failed to set advertising mode\r\n");
+        return 1;
+    }
+
      // Init request
     const static struct blecon_request_parameters_t request_params = {
         .namespace = "minimal-app",
