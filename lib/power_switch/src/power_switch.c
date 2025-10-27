@@ -9,7 +9,6 @@
 #include <zephyr/sys/poweroff.h>
 #include "power_switch/power_switch.h"
 
-
 #define BLECON_SW_POWER_NODE DT_CHOSEN(blecon_sw_power)
 static const struct gpio_dt_spec sw = GPIO_DT_SPEC_GET(BLECON_SW_POWER_NODE, gpios);
 
@@ -45,6 +44,7 @@ void power_sys_start() {
     ret = hwinfo_get_reset_cause(&reset_cause);
     __ASSERT(ret == 0, "Could not get reset reason (%d)\n", ret);
 
+    hwinfo_clear_reset_cause();
     printk("Reset cause: %u\n", reset_cause);
 
     if (reset_cause & RESET_POR || reset_cause & RESET_PIN || reset_cause == 0) {
