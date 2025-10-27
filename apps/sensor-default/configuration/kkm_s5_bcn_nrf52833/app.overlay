@@ -9,8 +9,21 @@
 	};
 	chosen {
 		blecon,led-status = &pwm_led0;
+		blecon,led-power = &led0;
+		blecon,sw-power = &button0;
+	};
+	longpress {
+        compatible = "zephyr,input-longpress";
+        input-codes = <INPUT_KEY_0>;
+		short-codes = <INPUT_KEY_A>;
+		long-codes = <INPUT_KEY_X>;
+        long-delay-ms = <2000>;
 	};
 	aliases {
 		accel0 = &lis3dh;
-	}
+	};
+};
+
+&fm25q04 {
+	zephyr,pm-device-runtime-auto;
 };
