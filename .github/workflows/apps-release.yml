@@ -9,6 +9,9 @@ jobs:
     strategy:
       matrix:
         include:
+          - app: minimal-app
+            board: kkm_k7p54l_bcn
+            board_qualifiers: nrf54l15/cpuapp
           - app: sensor-memfault
             board: kkm_s5_bcn
             variant: metrics
