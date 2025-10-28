@@ -36,7 +36,7 @@ static void download_client_on_error(struct blecon_download_client_t* client, vo
 static void ota_process_dfu_target_events(struct blecon_event_t* event, void* user_data);
 
 // OTA thread
-static void dfu_thread_fn(void*, void*, void*);
+static void ota_dfu_thread_fn(void*, void*, void*);
 
 #define DFU_THREAD_STACK_SIZE 2048
 #define DFU_THREAD_PRIORITY 5
@@ -69,8 +69,8 @@ struct ota_dfu_target_event_t {
     bool done;
 };
 
-K_THREAD_STACK_DEFINE(_dfu_thread_stack, DFU_THREAD_STACK_SIZE);
-struct k_thread _dfu_thread;
+K_THREAD_STACK_DEFINE(_ota_dfu_thread_stack, DFU_THREAD_STACK_SIZE);
+static struct k_thread _ota_dfu_thread;
 static char* _ota_url = NULL;
 
 void ota_init(struct blecon_event_loop_t* event_loop, struct blecon_t* blecon, const char* request_namespace) {
@@ -101,8 +101,8 @@ void ota_init(struct blecon_event_loop_t* event_loop, struct blecon_t* blecon, c
     _process_completed_dfu_target_events_event = blecon_event_loop_register_event(_event_loop, ota_process_dfu_target_events, NULL);
 
     // Start thread
-    k_thread_create(&_dfu_thread, _dfu_thread_stack, K_THREAD_STACK_SIZEOF(_dfu_thread_stack),
-                dfu_thread_fn, NULL, NULL, NULL,
+    k_thread_create(&_ota_dfu_thread, _ota_dfu_thread_stack, K_THREAD_STACK_SIZEOF(_ota_dfu_thread_stack),
+                ota_dfu_thread_fn, NULL, NULL, NULL,
                 DFU_THREAD_PRIORITY, 0, K_NO_WAIT);
 }
 
@@ -123,7 +123,7 @@ void memfault_ota_client_on_ota_status_update(struct blecon_memfault_ota_client_
 
     // Save OTA URL
     _ota_url = ota_url;
-    
+
     printk("Downloading update from %s\r\n", _ota_url);
     _downloading_update = true;
 
@@ -218,7 +218,7 @@ void ota_process_dfu_target_events(struct blecon_event_t* event, void* user_data
 }
 
 static struct flash_img_context _flash_ctx = {0};
-void dfu_thread_fn(void*, void*, void*) {
+void ota_dfu_thread_fn(void*, void*, void*) {
     while(true) {
         struct ota_dfu_target_op_t* op = k_fifo_get(&_dfu_target_ops, K_FOREVER);
         if(op->reset) {

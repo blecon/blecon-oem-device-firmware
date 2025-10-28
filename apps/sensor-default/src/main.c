@@ -13,6 +13,7 @@
 #include <zcbor_encode.h>
 #include <zephyr/drivers/sensor/sht4x.h>
 
+#include <zephyr/pm/device_runtime.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/dfu/flash_img.h>
@@ -27,6 +28,7 @@
 
 #include "motion/motion.h"
 #include "ota/ota.h"
+#include "power_switch/power_switch.h"
 #include "blecon_zephyr/blecon_zephyr.h"
 #include "blecon_zephyr/blecon_zephyr_event_loop.h"
 #include "blecon_zephyr/blecon_zephyr_memfault.h"
@@ -101,7 +103,9 @@ static struct blecon_event_t* _start_announce_event = NULL;
 static struct blecon_event_t* _start_connect_event = NULL;
 
 const static struct device *led_pwm;
-const static struct device *sht;
+const static struct device *sht = DEVICE_DT_GET_ANY(sensirion_sht4x);
+const static struct device *accel = DEVICE_DT_GET(DT_ALIAS(accel0));
+
 #if CONFIG_LED_SAMPLING
 // TODO replace with struct led_dt_spec once Zephyr is updated
 #define LED_SAMPLING_1_NODE DT_CHOSEN(blecon_led_sampling_1)
@@ -493,6 +497,7 @@ void on_ping_result(struct blecon_t* blecon) {
 void blecon_led_timeout(struct k_work *item) {
 #ifdef CONFIG_BLECON_LIB_LED
     blecon_led_set_announce(false);
+
 #else
     int ret;
     ret = led_off(led_pwm, 0);
@@ -536,6 +541,19 @@ void sampling_led_timeout(struct k_timer *timer) {
 }
 #endif
 
+void sensor_powerdown() {
+    int ret;
+    // Power down accelerometer
+    struct sensor_value odr = {0};
+    ret = sensor_attr_set(accel, SENSOR_CHAN_ACCEL_XYZ,
+                    SENSOR_ATTR_SAMPLING_FREQUENCY,
+                    &odr);
+
+    if (ret != 0) {
+        LOG_ERR("Failed to power down accelerometer: %d", ret);
+    }
+}
+
 void disable_leds(struct k_work *work) {
     #ifdef CONFIG_BLECON_LIB_LED
     blecon_led_enable(false);
@@ -546,9 +564,16 @@ void disable_leds(struct k_work *work) {
 void input_cb(struct input_event *evt, void* user_data)
 {
     switch (evt->code) {
-    case INPUT_KEY_0:
+    case INPUT_KEY_A:
         if(evt->value == 1) {
             blecon_event_signal(_start_announce_event);
+        }
+        break;
+    case INPUT_KEY_X:
+        if(evt->value == 1) {
+            power_flash_led(3);
+            sensor_powerdown();
+            power_off();
         }
         break;
     default:
@@ -594,15 +619,24 @@ int main(void)
 {
     int ret;
 
-    sht = DEVICE_DT_GET_ANY(sensirion_sht4x);
+    //Put gpio-keys into active state to be able to receive keypresses
+    ret = pm_device_runtime_get(DEVICE_DT_GET(DT_PATH(buttons)));
+    if (ret < 0) {
+        LOG_ERR("pm_device_runtime_get for buttons failed: %d", ret);
+    }
+
+    sensor_powerdown();
+    power_sys_start();
+    power_flash_led(1);
+
 	if (!device_is_ready(sht)) {
 		LOG_ERR("Device %s is not ready.", sht->name);
 		return 0;
 	}
 
-    ret = init_motion(MOTION_ACC_THRESHOLD, &motion_event_callbacks);
+    ret = init_motion(accel, MOTION_ACC_THRESHOLD, &motion_event_callbacks);
     if (ret) {
-        LOG_ERR("Could not initialize acclerometer: %d", ret);
+        LOG_ERR("Could not initialize accelerometer: %d", ret);
     }
 
     k_timer_start(&reboot_timer, K_SECONDS(REBOOT_PERIOD_SEC), K_FOREVER);
@@ -648,6 +682,12 @@ int main(void)
 
     // Init OTA module
     ota_init(_event_loop, &_blecon, MEMFAULT_REQUEST_NAMESPACE);
+
+    // Set initial advertising mode
+    if(!blecon_set_advertising_mode(&_blecon, blecon_advertising_mode_balanced)) {
+        printk("Failed to set advertising mode\r\n");
+        return 1;
+    }
 
      // Init request
     const static struct blecon_request_parameters_t request_params = {
@@ -702,13 +742,13 @@ void update_metrics(void) {
 static void temperature_logger_thread(void *d0, void *d1, void* d2) {
 
     float last_temperature = 0.0f;
-    
+
     while(true) {
         uint32_t timestamp = 0;
         float temperature = 0.0f;
         float humidity = 0.0f;
         int ret = read_temp_hum(&temperature, &humidity);
-        
+
         if (ret < 0) {
             LOG_ERR("Error: %s", "Could not read temperature/humidity");
             continue;
@@ -719,17 +759,17 @@ static void temperature_logger_thread(void *d0, void *d1, void* d2) {
             timestamp = get_time();
             event_data.temperature = temperature;
             event_data.humidity = humidity;
-            
+
             k_mutex_lock(&journal_mutex, K_FOREVER);
             blecon_journal_push(&_journal, timestamp, EVENT_TYPE_TEMP_HUM_UPDATE, &event_data);
             k_mutex_unlock(&journal_mutex);
-            
+
             LOG_DBG("writing to journal (%u)", timestamp);
         }
         else {
             _pre_uptime += CONFIG_SAMPLING_PERIOD_SEC;
         }
-        
+
         #if CONFIG_LED_SAMPLING
         if(atomic_test_bit(&_leds_enabled, 0)) {
             if( fabsf(temperature - last_temperature) > 0.05f ) {
@@ -743,7 +783,7 @@ static void temperature_logger_thread(void *d0, void *d1, void* d2) {
         }
         #endif
         last_temperature = temperature;
-        
+
         k_sleep(K_SECONDS(CONFIG_SAMPLING_PERIOD_SEC));
     }
 }

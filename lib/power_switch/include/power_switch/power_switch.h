@@ -6,6 +6,12 @@
 #include <zephyr/kernel.h>
 
 /**
+ * Convenience function to blink the blecon,power-led LED to indicate
+ * when the device has powered on or is powering off.
+ */
+void power_flash_led(uint32_t blinks);
+
+/**
  * Call on system power-up. If it is a power-on or pin-triggered reset,
  * immediately put the system into off mode. Otherwise, continue normal
  * startup.

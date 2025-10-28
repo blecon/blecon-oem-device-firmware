@@ -12,6 +12,7 @@
 #include <zcbor_common.h>
 #include <zcbor_encode.h>
 
+#include <zephyr/pm/device_runtime.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/dfu/flash_img.h>
@@ -37,6 +38,8 @@ optional since nRF52833 targets are memory-limited
 */
 #ifdef CONFIG_BLECON_LIB_LED
 #include "led/blecon_led.h"
+#else
+const static struct device *led_pwm;
 #endif
 
 #define MEMFAULT_REQUEST_NAMESPACE "memfault"
@@ -73,8 +76,6 @@ static bool _send_finished = false;
 
 static struct blecon_event_t* _start_announce_event = NULL;
 static struct blecon_event_t* _start_connect_event = NULL;
-
-const static struct device *led_pwm;
 
 // Function prototypes
 static uint32_t get_time(void);
@@ -125,25 +126,6 @@ K_TIMER_DEFINE(report_timer, send_report, NULL);
 K_TIMER_DEFINE(reboot_timer, reboot, NULL);
 
 INPUT_CALLBACK_DEFINE(NULL, input_cb, NULL);
-
-// Power on/off indicator
-#define POWER_BLINK_PERIOD_MS   200
-// TODO replace with struct led_dt_spec once Zephyr is updated
-#define LED_POWER_NODE DT_CHOSEN(blecon_led_power)
-const static struct device *led_power = DEVICE_DT_GET(DT_PARENT(LED_POWER_NODE));
-const static uint32_t led_power_idx = DT_NODE_CHILD_IDX(LED_POWER_NODE);
-
-static void flash_power_led(uint32_t blinks)
-{
-    for (uint32_t i = 0; i < blinks; i++){
-        if (i != 0) {
-            k_sleep(K_MSEC(POWER_BLINK_PERIOD_MS));
-        }
-        led_on(led_power, led_power_idx);
-        k_sleep(K_MSEC(POWER_BLINK_PERIOD_MS));
-        led_off(led_power, led_power_idx);
-    }
-}
 
 // Blecon activity triggers
 static void on_announce_button(struct blecon_event_t* event, void* user_data);
@@ -346,7 +328,7 @@ void input_cb(struct input_event *evt, void* user_data)
         break;
     case INPUT_KEY_X:
         if(evt->value == 1) {
-            flash_power_led(3);
+            power_flash_led(3);
             power_off();
         }
         break;
@@ -387,16 +369,26 @@ void on_start_connect(struct blecon_event_t* event, void* user_data) {
 
 int main(void)
 {
+    int ret;
+
+    // Put gpio-keys into active state to be able to receive keypresses
+    ret = pm_device_runtime_get(DEVICE_DT_GET(DT_PATH(buttons)));
+    if (ret < 0) {
+        LOG_ERR("pm_device_runtime_get for buttons failed: %d", ret);
+    }
+
     power_sys_start();
-    flash_power_led(1);
+    power_flash_led(1);
 
     k_timer_start(&reboot_timer, K_SECONDS(REBOOT_PERIOD_SEC), K_FOREVER);
 
+    #ifndef CONFIG_BLECON_LIB_LED
     led_pwm = DEVICE_DT_GET(DT_PATH(pwmleds));
     if (!device_is_ready(led_pwm)) {
         LOG_ERR("Device %s is not ready\n", led_pwm->name);
         return 0;
     }
+    #endif
 
     // Get event loop
     _event_loop = blecon_zephyr_get_event_loop();
@@ -433,6 +425,12 @@ int main(void)
 
     // Init OTA module
     ota_init(_event_loop, &_blecon, MEMFAULT_REQUEST_NAMESPACE);
+
+    // Set initial advertising mode
+    if(!blecon_set_advertising_mode(&_blecon, blecon_advertising_mode_balanced)) {
+        printk("Failed to set advertising mode\r\n");
+        return 1;
+    }
 
      // Init request
     const static struct blecon_request_parameters_t request_params = {

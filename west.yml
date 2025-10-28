@@ -43,7 +43,7 @@ manifest:
           - zcbor
           - zscilib
     - name: blecon-device-sdk
-      revision: fef8aba3d6f87bd613e0255030d8242380299919
+      revision: v4.2.0
       url: https://github.com/blecon/blecon-device-sdk
     - name: memfault-firmware-sdk
       revision: 1.12.0

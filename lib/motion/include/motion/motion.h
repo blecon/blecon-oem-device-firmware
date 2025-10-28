@@ -17,6 +17,6 @@ struct blecon_motion_event_callbacks_t {
     void (*vector)(float x, float y, float z);
 };
 
-int init_motion(float accel_threshold, const struct blecon_motion_event_callbacks_t* callbacks);
+int init_motion(const struct device *accel, float accel_threshold, const struct blecon_motion_event_callbacks_t* callbacks);
 
 #endif

@@ -7,4 +7,7 @@
     zephyr,user {
 		io-channels = <&adc 0>;
 	};
+	aliases {
+		accel0 = &lis3dh;
+	};
 };

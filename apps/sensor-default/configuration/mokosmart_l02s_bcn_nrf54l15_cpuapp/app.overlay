@@ -1,0 +1,42 @@
+/*
+ * Copyright (c) 2025 Blecon Ltd
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/ {
+	zephyr,user {
+    	io-channels = <&adc 0>;
+   	};
+	chosen {
+		blecon,led-sampling_1 = &led1;
+		blecon,led-sampling_2 = &led0;
+		blecon,led-status = &led2;
+		blecon,led-power = &led0;
+		blecon,sw-power = &button0;
+	};
+
+	longpress {
+        compatible = "zephyr,input-longpress";
+        input-codes = <INPUT_KEY_0>;
+		short-codes = <INPUT_KEY_A>;
+		long-codes = <INPUT_KEY_X>;
+        long-delay-ms = <2000>;
+	};
+};
+
+// We don't use cpuflpr, so allocate all RRAM abd SRAM to cpuapp
+&cpuapp_rram {
+	reg = <0x0 DT_SIZE_K(1524)>;
+};
+
+&cpuapp_sram {
+    reg = <0x20000000 DT_SIZE_K(256)>;
+};
+
+&uart21 {
+	status = "disabled";
+};
+
+&w25q16jv {
+	zephyr,pm-device-runtime-auto;
+};

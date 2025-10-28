@@ -102,7 +102,8 @@ const static uint32_t led_proximity_idx = DT_NODE_CHILD_IDX(LED_PROXIMITY_NODE);
 #endif
 
 const static struct device *led_pwm;
-const static struct device *sht;
+const static struct device *sht = DEVICE_DT_GET_ANY(sensirion_sht4x);
+const static struct device *accel = DEVICE_DT_GET(DT_ALIAS(accel0));
 
 // Function prototypes
 static uint32_t get_time(void);
@@ -509,7 +510,7 @@ void on_start_connect(struct blecon_event_t* event, void* user_data) {
 
 void on_start_scan(struct blecon_event_t* event, void* user_data) {
     LOG_DBG("Starting scan");
-    if(!blecon_scan_start(&_blecon, true, false, PROXIMITY_SCAN_TIME_MS)) {
+    if(!blecon_scan_start(&_blecon, true, false, blecon_scan_type_passive, PROXIMITY_SCAN_TIME_MS)) {
         LOG_ERR("Failed to scan for nearby devices");
         return;
     }
@@ -519,13 +520,12 @@ int main(void)
 {
     int ret;
 
-    sht = DEVICE_DT_GET_ANY(sensirion_sht4x);
 	if (!device_is_ready(sht)) {
 		LOG_ERR("Device %s is not ready.", sht->name);
 		return 0;
 	}
 
-    ret = init_motion(MOTION_ACC_THRESHOLD, &motion_event_callbacks);
+    ret = init_motion(accel, MOTION_ACC_THRESHOLD, &motion_event_callbacks);
     if (ret) {
         LOG_ERR("Could not initialize acclerometer: %d", ret);
     }
@@ -703,7 +703,7 @@ void on_scan_complete(struct blecon_t* blecon) {
     _closest_spotted.rssi = MIN_RSSI;
 
     if(_in_motion) {
-        if(!blecon_scan_start(blecon, true, false, PROXIMITY_SCAN_TIME_MS)) {
+        if(!blecon_scan_start(blecon, true, false, blecon_scan_type_passive, PROXIMITY_SCAN_TIME_MS)) {
             printk("Failed to scan for nearby devices\r\n");
             return;
         }
