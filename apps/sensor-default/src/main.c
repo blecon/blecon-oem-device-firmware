@@ -498,6 +498,9 @@ void blecon_led_timeout(struct k_work *item) {
 #ifdef CONFIG_BLECON_LIB_LED
     blecon_led_set_announce(false);
 
+    if (CONFIG_LEDS_ENABLED_DURATION_MIN == 0) {
+        blecon_led_enable(false);
+    }
 #else
     int ret;
     ret = led_off(led_pwm, 0);
@@ -573,6 +576,7 @@ void input_cb(struct input_event *evt, void* user_data)
         if(evt->value == 1) {
             power_flash_led(3);
             sensor_powerdown();
+            blecon_led_enable(false);
             power_off();
         }
         break;
@@ -583,8 +587,10 @@ void input_cb(struct input_event *evt, void* user_data)
 
 void on_announce_button(struct blecon_event_t* event, void* user_data) {
     // Enable LEDs for a while and start announcing
-    atomic_set_bit(&_leds_enabled, 0);
-    k_work_reschedule(&led_enabled_work, K_MINUTES(CONFIG_LEDS_ENABLED_DURATION_MIN));
+    if (CONFIG_LEDS_ENABLED_DURATION_MIN > 0) {
+        atomic_set_bit(&_leds_enabled, 0);
+        k_work_reschedule(&led_enabled_work, K_MINUTES(CONFIG_LEDS_ENABLED_DURATION_MIN));
+    }
 #ifdef CONFIG_BLECON_LIB_LED
     blecon_led_enable(true);
     blecon_led_set_announce(true);
